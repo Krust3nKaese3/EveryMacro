@@ -407,6 +407,18 @@
         </div>
     </div>
 
+    <!-- Secrets Modal -->
+    <div class="modal" id="secretsModal">
+        <div class="modal-content">
+            <div class="modal-header">🔑 Secrets: <span id="secretsMacroName"></span></div>
+            <div style="font-size:12px;opacity:.75;margin-bottom:8px" id="secretsBackendInfo">Wird automatisch gespeichert – du kannst die App verlassen, um ein Secret zu holen, und zurückkommen.</div>
+            <div id="secretsFields"></div>
+            <div class="modal-actions">
+                <button class="modal-btn primary" id="closeSecretsBtn">Fertig</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Log Modal -->
     <div class="modal" id="logModal">
         <div class="modal-content">
@@ -432,6 +444,8 @@
         let backgroundEnabled = false;
         let appStartListenerActive = false;
         let editingMacroId = null;
+        let secretValues = [];   // known secret values, only used to mask the log
+        let secretsModalMacroId = null;
 
         // Feature detection
         const features = {
@@ -457,6 +471,7 @@
         async function init() {
             checkBridge();
             await loadMacros();
+            initSecrets().catch(e => addLog("FEHLER Secrets laden: " + e.message, "error"));
             await loadBackgroundState();
             setupEventListeners();
             startActiveMacros();
@@ -485,6 +500,7 @@
             document.getElementById('addMacroBtn').addEventListener('click', () => openMacroModal());
             document.getElementById('cancelModalBtn').addEventListener('click', closeMacroModal);
             document.getElementById('saveModalBtn').addEventListener('click', saveMacro);
+            document.getElementById('closeSecretsBtn').addEventListener('click', closeSecretsModal);
             document.getElementById('backgroundToggle').addEventListener('click', toggleBackground);
             document.getElementById('clearLogBtn').addEventListener('click', clearLog);
             document.getElementById('btRefreshBtn').addEventListener('click', loadBtDevices);
@@ -623,7 +639,10 @@
             await saveMacros();
             renderMacros();
             startActiveMacros();
+            const savedId = editingMacroId || macros[macros.length - 1].id;
             closeMacroModal();
+            const saved = macros.find(m => m.id === savedId);
+            if (saved && (await missingSecrets(saved)).length) openSecretsModal(savedId);
         }
 
         function showValidationError(message) {
@@ -665,6 +684,13 @@
                     return { valid: false, error: 'Makro muss actions als Funktion definieren' };
                 }
 
+                if (capturedMacro.secrets != null) {
+                    if (!Array.isArray(capturedMacro.secrets)) return { valid: false, error: 'secrets muss ein Array sein, z.B. secrets: [{ key: "TUYA_SECRET", label: "…" }]' };
+                    for (const d of capturedMacro.secrets) {
+                        const k = typeof d === 'string' ? d : d && d.key;
+                        if (!k || !/^[A-Za-z0-9_.-]{1,64}$/.test(k)) return { valid: false, error: 'Ungültiger Secret-Key: ' + JSON.stringify(k) + ' (erlaubt: A-Z a-z 0-9 _ . -)' };
+                    }
+                }
                 return { valid: true, macro: capturedMacro };
             } catch (error) {
                 return { valid: false, error: 'Fehler beim Auswerten des Makros: ' + error.message };
@@ -724,8 +750,9 @@
                     : 'Noch nie ausgeführt';
                 
                 const errorHtml = macro.lastError 
-                    ? `<div class="macro-error">❌ ${macro.lastError}</div>`
+                    ? `<div class="macro-error">❌ ${escHtml(macro.lastError)}${macro.lastErrorSecret ? ` <button class="small-btn" onclick="openSecretsModal('${macro.id}', '${escHtml(macro.lastErrorSecret)}')">🔑 jetzt eintragen</button>` : ''}</div>`
                     : '';
+                const nSec = declaredSecrets(macro).length;
 
                 return `
                     <div class="macro-item">
@@ -737,6 +764,7 @@
                                 </button>
                                 <button class="small-btn" onclick="testMacro('${macro.id}')">▶ Testen</button>
                                 <button class="small-btn" onclick="openMacroModal('${macro.id}')">✏️</button>
+                                ${nSec ? `<button class="small-btn" onclick="openSecretsModal('${macro.id}')">🔑${nSec}</button>` : ''}
                                 <button class="small-btn" onclick="deleteMacro('${macro.id}')">🗑️</button>
                             </div>
                         </div>
@@ -909,6 +937,7 @@ ctx.vars = __px(__varsKey, __vars);
 let __g = {};
 try { __g = JSON.parse((await ctx.storage.get('macro_globals')) || '{}'); } catch (e) {}
 ctx.globals = __px('macro_globals', __g);
+if (!ctx.secrets) ctx.secrets = new Proxy({}, { get: (t, p) => { if (typeof p !== 'string' || p === 'then') return undefined; throw new Error('Secret ' + p + ' fehlt (EveryApp zu alt für ctx.secrets im Hintergrund)'); } });
 ctx.device = event.device;
 ctx.trigger = ctx.trigger || { type: event.type, device: event.device, tile: event.tile };
 for (const c of (__m.conditions || [])) { if (!(await c(ctx))) { ctx.log('übersprungen (Bedingung nicht erfüllt)'); return; } }
@@ -988,6 +1017,7 @@ await __m.actions(ctx);
                 const ctx = createMacroContext(macro);
                 ctx.vars = await loadVarsProxy('macro_vars_' + macro.id);
                 ctx.globals = await loadVarsProxy('macro_globals');
+                ctx.secrets = await loadSecretsProxy(macro);
                 ctx.device = context.device;
                 ctx.trigger = { type: context.trigger, device: context.device, tile: context.tile, interval: context.interval };
 
@@ -1007,13 +1037,16 @@ await __m.actions(ctx);
                 // Update stats
                 macro.lastRun = Date.now();
                 macro.lastError = null;
+                macro.lastErrorSecret = null;
                 macro.runCount = (macro.runCount || 0) + 1;
                 await saveMacros();
                 renderMacros();
 
                 addLog(`Makro "${macro.name}" erfolgreich ausgeführt (${context.trigger})`, 'info');
             } catch (error) {
-                macro.lastError = error.message;
+                const sk = error && (error.secretKey || ((/Secret (\S+) fehlt/.exec(error.message || '') || [])[1]));
+                macro.lastError = maskSecrets(error.message);
+                macro.lastErrorSecret = sk || null;
                 await saveMacros();
                 renderMacros();
                 addLog(`Makro "${macro.name}" fehlgeschlagen: ${error.message}`, 'error');
@@ -1104,6 +1137,112 @@ await __m.actions(ctx);
 
         // Persistent vars: storage key "<key>" (per macro: macro_vars_<id>, global: macro_globals).
         // Same keys as the EveryApp background engine -> shared between WebView and background runs.
+        // ---- Secrets: global per secret KEY (not per macro). Host: EveryAppBridge.secrets (lite = unverschlüsselt
+        // app-intern, nächster Build = Android Keystore via expo-secure-store mit automatischer Migration).
+        const hasHostSecrets = () => !!(window.EveryAppBridge && window.EveryAppBridge.secrets);
+        const Secrets = {
+            async get(k) { const v = hasHostSecrets() ? await window.EveryAppBridge.secrets.get(k) : await storageGet('secret_' + k); if (v) rememberSecret(v); return v || null; },
+            async set(k, v) { v = String(v || ''); if (!v) return Secrets.delete(k); rememberSecret(v); return hasHostSecrets() ? window.EveryAppBridge.secrets.set(k, v) : storageSet('secret_' + k, v); },
+            async delete(k) { return hasHostSecrets() ? window.EveryAppBridge.secrets.delete(k) : storageSet('secret_' + k, ''); },
+            async info() { try { return hasHostSecrets() ? await window.EveryAppBridge.secrets.info() : { encrypted: false, backend: 'lite (Mini-App-Speicher)' }; } catch (e) { return { encrypted: false, backend: 'lite' }; } },
+        };
+        function rememberSecret(v) { if (v && v.length >= 3 && !secretValues.includes(v)) secretValues.push(v); }
+        function maskSecrets(str) {
+            let out = String(str);
+            for (const v of [...secretValues].sort((a, b) => b.length - a.length)) out = out.split(v).join('•••');
+            return out;
+        }
+        function declaredSecrets(macro) {
+            return (Array.isArray(macro.secrets) ? macro.secrets : []).map(x => typeof x === 'string' ? { key: x } : x).filter(x => x && x.key);
+        }
+        async function missingSecrets(macro) {
+            const miss = [];
+            for (const d of declaredSecrets(macro)) if (!(await Secrets.get(d.key))) miss.push(d.key);
+            return miss;
+        }
+        async function loadSecretsProxy(macro) {
+            const vals = {};
+            for (const d of declaredSecrets(macro)) { const v = await Secrets.get(d.key); if (v) vals[d.key] = v; }
+            return new Proxy(vals, {
+                get(t, p) {
+                    if (typeof p !== 'string' || p === 'then' || p === 'toJSON') return undefined;
+                    if (!(p in t)) {
+                        const e = new Error(`Secret ${p} fehlt`); e.secretKey = p; throw e;
+                    }
+                    return t[p];
+                },
+                set() { throw new Error('ctx.secrets ist schreibgeschützt'); },
+            });
+        }
+        async function openSecretsModal(macroId, focusKey) {
+            const macro = macros.find(m => m.id === macroId);
+            if (!macro) return;
+            secretsModalMacroId = macroId;
+            const decl = declaredSecrets(macro);
+            document.getElementById('secretsMacroName').textContent = macro.name;
+            const info = await Secrets.info();
+            document.getElementById('secretsBackendInfo').textContent =
+                'Wird bei jeder Eingabe automatisch gespeichert – du kannst die App verlassen, um ein Secret zu holen, und zurückkommen. Speicher: ' +
+                (info.encrypted ? 'verschlüsselt (Android Keystore)' : 'LITE – unverschlüsselt app-intern, wird mit dem nächsten Build automatisch verschlüsselt');
+            const box = document.getElementById('secretsFields');
+            if (!decl.length) { box.innerHTML = '<div class="empty-state">Dieses Makro deklariert keine Secrets.<br>secrets: [{ key: "MEIN_KEY", label: "…" }]</div>'; }
+            else box.innerHTML = decl.map(d => `
+                <div style="margin-bottom:12px" data-key="${escHtml(d.key)}">
+                    <div style="font-weight:600">${escHtml(d.label || d.key)} <span style="opacity:.6;font-weight:400">(${escHtml(d.key)})</span> <span class="sec-state"></span></div>
+                    ${d.hint ? `<div style="font-size:12px;opacity:.7">${escHtml(d.hint)}</div>` : ''}
+                    <div style="display:flex;gap:4px;margin-top:4px">
+                        <input type="password" class="sec-input" autocomplete="off" autocapitalize="off" spellcheck="false" style="flex:1;min-width:0;padding:8px" placeholder="Secret einfügen…">
+                        <button class="small-btn sec-show" title="anzeigen/verbergen">👁</button>
+                        <button class="small-btn sec-paste" title="einfügen">📋</button>
+                        <button class="small-btn sec-del" title="löschen">🗑️</button>
+                    </div>
+                </div>`).join('');
+            for (const row of box.querySelectorAll('[data-key]')) {
+                const key = row.dataset.key, inp = row.querySelector('.sec-input'), st = row.querySelector('.sec-state');
+                const v = await Secrets.get(key);
+                inp.value = v || '';
+                const upd = () => { st.textContent = inp.value ? '✓ gespeichert' : '⚠ fehlt'; st.style.color = inp.value ? '#4caf50' : '#ff9800'; };
+                upd();
+                let t = null;
+                const save = async () => { try { await Secrets.set(key, inp.value.trim()); upd(); } catch (e) { st.textContent = 'FEHLER: ' + e.message; } };
+                inp.addEventListener('input', () => { clearTimeout(t); t = setTimeout(save, 300); });
+                inp.addEventListener('change', save);
+                inp.addEventListener('blur', save);
+                row.querySelector('.sec-show').onclick = () => { inp.type = inp.type === 'password' ? 'text' : 'password'; };
+                row.querySelector('.sec-paste').onclick = async () => {
+                    let txt = null;
+                    try { if (window.EveryAppBridge?.clipboard?.getString) txt = await window.EveryAppBridge.clipboard.getString(); } catch (e) {}
+                    try { if (txt == null && navigator.clipboard?.readText) txt = await navigator.clipboard.readText(); } catch (e) {}
+                    if (txt == null) { inp.focus(); alert('Einfügen nicht möglich – bitte lange ins Feld tippen und „Einfügen“ wählen.'); return; }
+                    inp.value = String(txt).trim(); await save();
+                };
+                row.querySelector('.sec-del').onclick = async () => {
+                    if (!confirm(`Secret ${key} löschen? (gilt für alle Makros mit diesem Key)`)) return;
+                    inp.value = ''; await Secrets.delete(key); upd();
+                };
+                if (focusKey === key) setTimeout(() => inp.focus(), 50);
+            }
+            document.getElementById('secretsModal').classList.add('active');
+            try { localStorage.setItem('em_secrets_modal', macroId); } catch (e) {}
+        }
+        async function closeSecretsModal() {
+            for (const inp of document.querySelectorAll('#secretsFields .sec-input')) {
+                const key = inp.closest('[data-key]').dataset.key;
+                try { await Secrets.set(key, inp.value.trim()); } catch (e) {}
+            }
+            document.getElementById('secretsModal').classList.remove('active');
+            secretsModalMacroId = null;
+            try { localStorage.removeItem('em_secrets_modal'); } catch (e) {}
+            renderMacros();
+        }
+
+        // After loading macros: preload secret values for log masking, reopen an unfinished secrets dialog
+        async function initSecrets() {
+            for (const m of macros) for (const d of declaredSecrets(m)) { try { await Secrets.get(d.key); } catch (e) {} }
+            let open = null; try { open = localStorage.getItem('em_secrets_modal'); } catch (e) {}
+            if (open && macros.some(m => m.id === open)) openSecretsModal(open);
+        }
+
         async function storageGet(k) { return features.storage ? await window.EveryAppBridge.storage.get(k) : localStorage.getItem(k); }
         async function storageSet(k, v) { return features.storage ? await window.EveryAppBridge.storage.set(k, v) : localStorage.setItem(k, v); }
         async function loadVarsProxy(key) {
@@ -1562,7 +1701,7 @@ await __m.actions(ctx);
 
         function addLog(message, level = 'info') {
             const timestamp = new Date().toLocaleTimeString('de-DE');
-            const entry = { message, level, timestamp };
+            const entry = { message: maskSecrets(message), level, timestamp };
             globalLog.unshift(entry);
             
             if (globalLog.length > 100) {
