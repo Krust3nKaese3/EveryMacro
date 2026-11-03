@@ -333,6 +333,17 @@
 
         <div class="section">
             <div class="section-title">
+                <span>Bluetooth-Geräte</span>
+                <button class="small-btn" id="btRefreshBtn">Laden</button>
+            </div>
+            <label style="display:block;margin:6px 0;font-size:13px"><input type="checkbox" id="btIncludePaired"> auch gekoppelte (nicht verbundene) anzeigen</label>
+            <div id="btDeviceList" style="font-size:13px">Tippe auf „Laden“.</div>
+            <button class="small-btn" id="btCopyBtn" style="margin-top:8px">📋 Für KI kopieren</button>
+            <textarea id="btCopyFallback" readonly style="display:none;width:100%;height:160px;margin-top:8px;font-size:12px"></textarea>
+        </div>
+
+        <div class="section">
+            <div class="section-title">
                 <span>Makros</span>
                 <button class="small-btn" id="addMacroBtn">+ Hinzufügen</button>
             </div>
@@ -448,6 +459,9 @@
             document.getElementById('saveModalBtn').addEventListener('click', saveMacro);
             document.getElementById('backgroundToggle').addEventListener('click', toggleBackground);
             document.getElementById('clearLogBtn').addEventListener('click', clearLog);
+            document.getElementById('btRefreshBtn').addEventListener('click', loadBtDevices);
+            document.getElementById('btIncludePaired').addEventListener('change', loadBtDevices);
+            document.getElementById('btCopyBtn').addEventListener('click', copyBtInfo);
             document.getElementById('showLogBtn').addEventListener('click', showFullLog);
             document.getElementById('closeLogModalBtn').addEventListener('click', () => {
                 document.getElementById('logModal').classList.remove('active');
@@ -887,7 +901,7 @@ await __m.actions(ctx);
 
             window.EveryAppBridge.events.on(eventName, (device) => {
                 if (trigger.nameOrAddress) {
-                    if (device.name === trigger.nameOrAddress || device.address === trigger.nameOrAddress) {
+                    if (deviceMatches(trigger.nameOrAddress, device)) {
                         executeMacro(macro, { trigger: trigger.type, device });
                     }
                 } else {
@@ -925,6 +939,7 @@ await __m.actions(ctx);
 
                 // Execute actions
                 const ctx = createMacroContext(macro);
+                ctx.device = context.device;
                 await macroObj.actions(ctx);
 
                 // Update stats
@@ -986,6 +1001,8 @@ await __m.actions(ctx);
                 ctx.vibrate = () => { throw new Error('Vibration nicht verfügbar'); };
             }
 
+            ctx.copy = (text) => copyText(String(text ?? ''));
+
             // Persistent storage
             ctx.vars = createVarsProxy(macro.id);
 
@@ -1021,6 +1038,76 @@ await __m.actions(ctx);
             } catch (error) {
                 console.error('Failed to save vars:', error);
             }
+        }
+
+
+        // ============================================================================
+        // BLUETOOTH-GERÄTE (Info für KI)
+        // ============================================================================
+        let btDevices = [];
+        function escHtml(t) { return String(t ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+        async function loadBtDevices() {
+            const list = document.getElementById('btDeviceList');
+            if (!features.bluetooth) { list.textContent = 'Bluetooth wird von dieser EveryApp-Version nicht unterstützt'; return; }
+            list.textContent = 'Lade…';
+            try {
+                const includePaired = document.getElementById('btIncludePaired').checked;
+                btDevices = await window.EveryAppBridge.bluetooth.getConnectedDevices(includePaired) || [];
+                if (btDevices.length === 0) { list.textContent = 'Keine verbundenen Geräte gefunden.'; return; }
+                list.innerHTML = btDevices.map(d => `<div style="padding:6px 0;border-bottom:1px solid #333">
+                    <b>${escHtml(d.alias || d.name)}</b> ${d.connected === false ? '(nicht verbunden)' : '🟢'}<br>
+                    Original: ${escHtml(d.name)} · MAC: <code>${escHtml(d.address)}</code><br>
+                    Typ: ${escHtml(d.type || '?')} · Klasse: ${escHtml(d.majorClass || '?')} · Kopplung: ${escHtml(d.bondState || '?')}</div>`).join('');
+            } catch (e) {
+                list.textContent = 'FEHLER: ' + e.message;
+                addLog('Bluetooth-Geräte: ' + e.message, 'error');
+            }
+        }
+
+        function btInfoText() {
+            const lines = ['Bluetooth-Geräte (EveryMacro, ' + new Date().toLocaleString('de-DE') + ')', ''];
+            btDevices.forEach((d, i) => {
+                lines.push(`Gerät ${i + 1}:`);
+                lines.push(`  Eigener Name (Alias): ${d.alias || d.name}`);
+                lines.push(`  Originalname: ${d.name}`);
+                lines.push(`  MAC-Adresse: ${d.address}`);
+                lines.push(`  Verbunden: ${d.connected === false ? 'nein' : 'ja'}`);
+                lines.push(`  Typ: ${d.type || '?'}  |  Geräteklasse: ${d.majorClass || '?'} (${d.deviceClass ?? '?'})  |  Kopplung: ${d.bondState || '?'}`);
+                if (d.uuids && d.uuids.length) lines.push(`  UUIDs: ${d.uuids.join(', ')}`);
+                lines.push('');
+            });
+            lines.push('Hinweis für die KI: EveryMacro-Makros (siehe MACROS.md im Repo Krust3nKaese3/EveryMacro). Trigger am besten per MAC-Adresse, z.B.');
+            lines.push(`  triggers: [bluetoothConnected("${btDevices[0] ? btDevices[0].address : 'AA:BB:CC:DD:EE:FF'}")]`);
+            lines.push('Name/Alias funktionieren auch (Groß-/Kleinschreibung egal). ctx.device enthält name, alias, address, type, majorClass.');
+            return lines.join('\n');
+        }
+
+        async function copyText(text) {
+            try {
+                if (window.EveryAppBridge && window.EveryAppBridge.clipboard) { await window.EveryAppBridge.clipboard.setString(text); return true; }
+            } catch (e) { addLog('Bridge-Clipboard fehlgeschlagen: ' + e.message, 'error'); }
+            try { await navigator.clipboard.writeText(text); return true; } catch (e) {}
+            return false;
+        }
+
+        async function copyBtInfo() {
+            if (btDevices.length === 0) await loadBtDevices();
+            const text = btInfoText();
+            const ta = document.getElementById('btCopyFallback');
+            if (await copyText(text)) {
+                ta.style.display = 'none';
+                addLog('Bluetooth-Infos kopiert (' + btDevices.length + ' Geräte)', 'info');
+            } else {
+                ta.value = text; ta.style.display = 'block'; ta.select();
+                addLog('Kopieren nicht möglich – Text unten markieren und manuell kopieren', 'error');
+            }
+        }
+
+        function deviceMatches(x, d) {
+            const n = v => String(v ?? '').trim().toLowerCase();
+            const want = n(x);
+            return !!d && want !== '' && [d.name, d.alias, d.address].some(v => n(v) === want);
         }
 
         // ============================================================================
