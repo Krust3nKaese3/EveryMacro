@@ -99,3 +99,16 @@ Das **Tuya Access Secret** gehört nie in den Code. Es wird als Secret `TUYA_SEC
 ## Tipp
 
 Im Router allen Geräten (Denon, Hue, Shelly …) eine feste IP zuweisen, damit die Makros sie immer finden.
+
+## Deckenlicht-Popup (`popup-decke.js`)
+
+Kachel „Decke“ in den Schnelleinstellungen. Ein Tipp öffnet ein dezentes Popup im Android-Stil: An/Aus, Helligkeit (10–100 %), Farbleiste und „Weiß“. Beim Öffnen wird der aktuelle Zustand der Lampe über die Tuya-Cloud geladen.
+
+**Secrets** (werden beim Speichern abgefragt, nichts steht im Code):
+- `TUYA_CLIENT_ID` – Tuya Client ID / Access ID
+- `TUYA_SECRET` – Tuya Access Secret
+- `TUYA_DEVICE_ID` – Geräte-ID der Decke
+
+**Import:** `everyapp://everymacro/import?url=https%3A%2F%2Fraw.githubusercontent.com%2FKrust3nKaese3%2FEveryMacro%2Fmain%2Fmy-macros%2Fpopup-decke.js`
+
+**Kachel hinzufügen:** Hintergrundmodus in EveryApp an → Schnelleinstellungen herunterziehen → Stift → Kachel „EveryApp N“ (bzw. „Decke“) in den aktiven Bereich ziehen.
