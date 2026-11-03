@@ -556,3 +556,25 @@ den du deiner KI zum Erstellen eines Makros geben kannst.
 
 ### `ctx.copy(text)`
 Kopiert Text in die Zwischenablage (im Vordergrund und im Hintergrund).
+
+## Netzwerk-Info & Denon-Info
+
+Im Bereich **„Netzwerk-Info“**:
+- **Laden**: eigene IP (per WebRTC, kann „?“ sein), vermutetes Gateway (x.y.z.1 / 192.168.178.1). Der WLAN-Name ist erst ab dem nächsten EveryApp-Build verfügbar (`EveryAppBridge.network.getInfo()`), bis dahin steht dort „nicht verfügbar“.
+- **Netz scannen**: fragt x.y.z.1–254 per HTTP (Port 80, 800 ms Timeout, 20 parallel) ab und zeigt antwortende Geräte mit Server-Header und Seitentitel.
+- **Geräte-IP + Abfragen** (Standard 192.168.178.20, wird gespeichert): Bei einem Denon/Marantz-AVR werden Power, aktuelle Quelle (intern und umbenannt), Lautstärke und alle Quellen (`intern -> angezeigter Name`) gelesen,
+  über `formMainZone_MainZoneXml.xml`, `formMainZone_MainZoneXmlStatus.xml` und `POST /goform/AppCommand.xml`
+  (GetSourceStatus/GetRenameSource/GetDeletedSource). Andere Geräte: HTTP-Status und gekürzter Inhalt von `GET /`.
+- **📋 Für KI kopieren**: alles als Text inkl. Hinweisen für die KI.
+
+Aktuelle Denon-Quelle im Makro prüfen:
+```js
+const r = await ctx.http.get("http://192.168.178.20/goform/formMainZone_MainZoneXml.xml");
+const src = (/<InputFuncSelect><value>([^<]*)/.exec(r.body) || [])[1]; // z.B. "DVD" (interner Name)
+if (src !== "DVD") await ctx.http.get("http://192.168.178.20/goform/formiPhoneAppDirect.xml?SIDVD");
+```
+SI-Befehle verwenden immer den **internen** Namen: SIDVD, SITV, SISAT/CBL, SIBD, SIGAME, SIMPLAY, SIBT, SINET, SITUNER …
+
+## Media-Steuerung (ab nächstem EveryApp-Build)
+`await ctx.media.play()`, `pause()`, `toggle()`, `next()`, `previous()`, `stop()` – sendet Medientasten an den gerade aktiven Player (wie Kopfhörer-Tasten).
+Vorher wirft das den Fehler „Media-Steuerung braucht nächsten Build“. Welche App gerade spielt, lässt sich nicht abfragen.
