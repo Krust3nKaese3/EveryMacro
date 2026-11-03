@@ -344,6 +344,22 @@
 
         <div class="section">
             <div class="section-title">
+                <span>Netzwerk-Info</span>
+                <button class="small-btn" id="netLoadBtn">Laden</button>
+            </div>
+            <div id="netInfo" style="font-size:13px;white-space:pre-wrap">Tippe auf „Laden“.</div>
+            <button class="small-btn" id="netScanBtn" style="margin-top:6px">Netz scannen</button>
+            <div id="netScan" style="font-size:12px;white-space:pre-wrap;margin-top:4px"></div>
+            <div style="margin-top:8px;font-size:13px">Geräte-IP (z.B. Denon):
+                <input id="devIp" style="width:140px" value="192.168.178.20">
+                <button class="small-btn" id="devQueryBtn">Abfragen</button></div>
+            <div id="devInfo" style="font-size:12px;white-space:pre-wrap;margin-top:4px;max-height:240px;overflow-y:auto"></div>
+            <button class="small-btn" id="netCopyBtn" style="margin-top:8px">📋 Für KI kopieren</button>
+            <textarea id="netCopyFallback" readonly style="display:none;width:100%;height:160px;margin-top:8px;font-size:12px"></textarea>
+        </div>
+
+        <div class="section">
+            <div class="section-title">
                 <span>Makros</span>
                 <button class="small-btn" id="addMacroBtn">+ Hinzufügen</button>
             </div>
@@ -462,6 +478,7 @@
             document.getElementById('btRefreshBtn').addEventListener('click', loadBtDevices);
             document.getElementById('btIncludePaired').addEventListener('change', loadBtDevices);
             document.getElementById('btCopyBtn').addEventListener('click', copyBtInfo);
+            initNetSection();
             document.getElementById('showLogBtn').addEventListener('click', showFullLog);
             document.getElementById('closeLogModalBtn').addEventListener('click', () => {
                 document.getElementById('logModal').classList.remove('active');
@@ -1001,6 +1018,12 @@ await __m.actions(ctx);
                 ctx.vibrate = () => { throw new Error('Vibration nicht verfügbar'); };
             }
 
+            const mediaFn = (a) => async () => {
+                const m = window.EveryAppBridge && window.EveryAppBridge.media;
+                if (!m || typeof m[a] !== 'function') throw new Error('Media-Steuerung braucht nächsten Build');
+                await m[a]();
+            };
+            ctx.media = { play: mediaFn('play'), pause: mediaFn('pause'), toggle: mediaFn('toggle'), next: mediaFn('next'), previous: mediaFn('previous'), stop: mediaFn('stop') };
             ctx.copy = async (text) => { const err = await copyText(String(text ?? '')); if (err) throw new Error('Kopieren fehlgeschlagen: ' + err); };
 
             // Persistent storage
@@ -1147,6 +1170,226 @@ await __m.actions(ctx);
             const n = v => String(v ?? '').trim().toLowerCase();
             const want = n(x);
             return !!d && want !== '' && [d.name, d.alias, d.address].some(v => n(v) === want);
+        }
+
+
+        // ============================================================================
+        // NETZWERK-INFO (+ Geräteabfrage, z.B. Denon)
+        // ============================================================================
+        const net = { ownIp: '?', gateway: '?', ssid: 'nicht verfügbar (braucht nächsten Build)', source: 'JS', scan: [], device: null, errors: [] };
+        const trunc = (t, n = 1500) => { t = String(t ?? ''); return t.length > n ? t.slice(0, n) + ' …[gekürzt]' : t; };
+
+        async function httpReq(opts) {
+            if (!features.http) throw new Error('HTTP-Bridge nicht verfügbar');
+            return await window.EveryAppBridge.http.request(opts);
+        }
+
+        function getIpViaWebRTC() {
+            return new Promise(resolve => {
+                try {
+                    const pc = new RTCPeerConnection({ iceServers: [] });
+                    const found = new Set();
+                    pc.createDataChannel('x');
+                    pc.onicecandidate = e => {
+                        if (!e.candidate) { pc.close(); resolve([...found]); return; }
+                        const m = /([0-9]{1,3}(\.[0-9]{1,3}){3})/.exec(e.candidate.candidate);
+                        if (m) found.add(m[1]);
+                    };
+                    pc.createOffer().then(o => pc.setLocalDescription(o)).catch(() => resolve([]));
+                    setTimeout(() => { try { pc.close(); } catch (e) {} resolve([...found]); }, 2000);
+                } catch (e) { resolve([]); }
+            });
+        }
+
+        async function probe(ip, timeoutMs = 800, path = '/') {
+            const t0 = Date.now();
+            try {
+                const r = await httpReq({ url: `http://${ip}${path}`, method: 'GET', timeoutMs });
+                const headers = r.headers || {};
+                const title = (/<title[^>]*>([^<]*)<\/title>/i.exec(r.body || '') || [])[1];
+                return { ip, ok: true, status: r.status, server: headers.server || headers.Server || '', title: (title || '').trim(), ms: Date.now() - t0, body: r.body };
+            } catch (e) { return { ip, ok: false, error: e.message }; }
+        }
+
+        async function loadNetInfo() {
+            const el = document.getElementById('netInfo');
+            el.textContent = 'Lade…'; net.errors = [];
+            const br = window.EveryAppBridge;
+            if (br && br.network && typeof br.network.getInfo === 'function') {
+                try {
+                    const i = await br.network.getInfo();
+                    net.source = 'nativ'; net.ownIp = i.ip || '?'; net.gateway = i.gateway || '?';
+                    net.ssid = i.ssid || ('? ' + (i.ssidError || '')); net.transport = i.transport; net.dns = (i.dns || []).join(', ');
+                } catch (e) { net.errors.push(e.message); }
+            }
+            if (net.source !== 'nativ') {
+                const ips = await getIpViaWebRTC();
+                const v4 = ips.find(ip => /^(10|192\.168|172\.(1[6-9]|2\d|3[01]))\./.test(ip));
+                net.ownIp = v4 || '? (WebRTC liefert keine IP)';
+                const cands = [];
+                if (v4) cands.push(v4.replace(/\.\d+$/, '.1'));
+                if (!cands.includes('192.168.178.1')) cands.push('192.168.178.1');
+                net.gateway = '?';
+                for (const c of cands) {
+                    const r = await probe(c, 1000);
+                    if (r.ok) { net.gateway = `${c} (vermutet, antwortet: HTTP ${r.status}${r.title ? ' „' + r.title + '“' : ''})`; break; }
+                }
+                if (net.gateway === '?') net.gateway = '? (geraten: ' + cands.join(', ') + ' – keine Antwort)';
+            }
+            el.textContent = `WLAN-Name: ${net.ssid}\nEigene IP: ${net.ownIp}\nGateway: ${net.gateway}` +
+                (net.dns ? `\nDNS: ${net.dns}` : '') + `\nQuelle: ${net.source}` + (net.errors.length ? `\nFEHLER: ${net.errors.join(' | ')}` : '');
+        }
+
+        function subnetBase() {
+            const m = /^(\d+\.\d+\.\d+)\./.exec(net.ownIp) || /^(\d+\.\d+\.\d+)\./.exec(net.gateway) ||
+                      /^(\d+\.\d+\.\d+)\./.exec(document.getElementById('devIp').value.trim());
+            return m ? m[1] : '192.168.178';
+        }
+
+        async function scanNet() {
+            const el = document.getElementById('netScan');
+            const base = subnetBase();
+            const queue = []; for (let i = 1; i <= 254; i++) queue.push(`${base}.${i}`);
+            net.scan = []; let done = 0;
+            el.textContent = `Scanne ${base}.1-254 …`;
+            const worker = async () => {
+                while (queue.length) {
+                    const ip = queue.shift();
+                    const r = await probe(ip, 800);
+                    done++;
+                    // "ok" or a non-timeout error (e.g. connection refused) = host is up
+                    if (r.ok) net.scan.push(r);
+                    if (done % 20 === 0) el.textContent = `Scanne ${base}.x … ${done}/254, gefunden: ${net.scan.length}`;
+                }
+            };
+            await Promise.all(Array.from({ length: 20 }, worker));
+            net.scan.sort((a, b) => Number(a.ip.split('.')[3]) - Number(b.ip.split('.')[3]));
+            el.textContent = net.scan.length ? 'Antwortende Geräte (HTTP Port 80):\n' + net.scan.map(r =>
+                `${r.ip}  HTTP ${r.status}${r.server ? '  Server: ' + r.server : ''}${r.title ? '  „' + r.title + '“' : ''}`).join('\n')
+                : 'Keine HTTP-Geräte gefunden.';
+        }
+
+        function xmlVal(doc, tag) {
+            const n = doc.getElementsByTagName(tag)[0];
+            if (!n) return null;
+            const v = n.getElementsByTagName('value');
+            return v.length ? v[0].textContent.trim() : n.textContent.trim();
+        }
+        function xmlVals(doc, tag) {
+            const n = doc.getElementsByTagName(tag)[0];
+            if (!n) return [];
+            return [...n.getElementsByTagName('value')].map(v => v.textContent.trim());
+        }
+
+        async function queryDevice() {
+            const ip = document.getElementById('devIp').value.trim();
+            const el = document.getElementById('devInfo');
+            try { if (features.storage) await window.EveryAppBridge.storage.set('net_device_ip', ip); else localStorage.setItem('net_device_ip', ip); } catch (e) {}
+            el.textContent = 'Frage ' + ip + ' ab …';
+            const d = { ip, steps: [], isDenon: false, power: null, current: null, volume: null, sources: [] };
+            const P = new DOMParser();
+
+            // 1) MainZoneXml
+            try {
+                const r = await httpReq({ url: `http://${ip}/goform/formMainZone_MainZoneXml.xml`, method: 'GET', timeoutMs: 4000 });
+                const doc = P.parseFromString(r.body || '', 'text/xml');
+                if (r.status === 200 && doc.getElementsByTagName('item').length) {
+                    d.isDenon = true;
+                    d.power = xmlVal(doc, 'Power') || xmlVal(doc, 'ZonePower');
+                    d.current = xmlVal(doc, 'InputFuncSelect');
+                    d.volume = xmlVal(doc, 'MasterVolume');
+                    const intern = xmlVals(doc, 'InputFuncList');
+                    const renamed = xmlVals(doc, 'RenameSource');
+                    const del = xmlVals(doc, 'SourceDelete');
+                    d.sources = intern.map((n, i) => ({ intern: n, name: renamed[i] || n, used: del[i] ? del[i].toUpperCase() !== 'DEL' : true }));
+                }
+                d.steps.push({ step: 'GET MainZoneXml', status: r.status, raw: trunc(r.body) });
+            } catch (e) { d.steps.push({ step: 'GET MainZoneXml', error: e.message }); }
+
+            if (d.isDenon) {
+                // 2) MainZoneXmlStatus
+                try {
+                    const r = await httpReq({ url: `http://${ip}/goform/formMainZone_MainZoneXmlStatus.xml`, method: 'GET', timeoutMs: 4000 });
+                    d.steps.push({ step: 'GET MainZoneXmlStatus', status: r.status, raw: trunc(r.body) });
+                } catch (e) { d.steps.push({ step: 'GET MainZoneXmlStatus', error: e.message }); }
+                // 3) AppCommand
+                try {
+                    const body = '<?xml version="1.0" encoding="utf-8"?><tx><cmd id="1">GetSourceStatus</cmd><cmd id="1">GetRenameSource</cmd><cmd id="1">GetDeletedSource</cmd></tx>';
+                    const r = await httpReq({ url: `http://${ip}/goform/AppCommand.xml`, method: 'POST', headers: { 'Content-Type': 'text/xml' }, body, timeoutMs: 4000 });
+                    d.steps.push({ step: 'POST AppCommand (GetSourceStatus/GetRenameSource/GetDeletedSource)', status: r.status, raw: trunc(r.body) });
+                    const doc = P.parseFromString(r.body || '', 'text/xml');
+                    // GetRenameSource: <functionrename><list><name>..</name><rename>..</rename></list>
+                    const lists = [...doc.getElementsByTagName('list')];
+                    lists.forEach(l => {
+                        const n = l.getElementsByTagName('name')[0], rn = l.getElementsByTagName('rename')[0];
+                        if (n && rn) {
+                            const intern = n.textContent.trim(), name = rn.textContent.trim();
+                            const ex = d.sources.find(s => s.intern.toUpperCase() === intern.toUpperCase());
+                            if (ex) ex.name = name || ex.name; else d.sources.push({ intern, name: name || intern, used: true });
+                        }
+                    });
+                } catch (e) { d.steps.push({ step: 'POST AppCommand', error: e.message }); }
+            } else {
+                const r = await probe(ip, 4000, '/');
+                d.steps.push(r.ok ? { step: 'GET /', status: r.status, server: r.server, title: r.title, raw: trunc(r.body) } : { step: 'GET /', error: r.error });
+            }
+            net.device = d;
+            el.textContent = deviceText(d);
+        }
+
+        function deviceText(d) {
+            if (!d) return '';
+            const L = [`Gerät ${d.ip}: ${d.isDenon ? 'Denon/Marantz AVR erkannt' : 'kein Denon-XML'}`];
+            if (d.isDenon) {
+                const cur = d.sources.find(s => d.current && s.intern.toUpperCase() === d.current.toUpperCase());
+                L.push(`  Power: ${d.power ?? '?'}`);
+                L.push(`  Aktuelle Quelle: intern "${d.current ?? '?'}"${cur && cur.name !== cur.intern ? ` -> angezeigt "${cur.name}"` : ''}`);
+                L.push(`  Lautstärke (MasterVolume): ${d.volume ?? '?'}`);
+                if (d.sources.length) {
+                    L.push('  Quellen (intern -> angezeigter Name):');
+                    d.sources.forEach(s => L.push(`    ${s.intern} -> ${s.name}${s.used ? '' : '  (ausgeblendet)'}`));
+                }
+            }
+            d.steps.forEach(st => {
+                L.push(`  [${st.step}] ` + (st.error ? `FEHLER: ${st.error}` : `HTTP ${st.status}${st.server ? ' Server: ' + st.server : ''}${st.title ? ' „' + st.title + '“' : ''}`));
+                if (st.raw) L.push('    Roh (gekürzt): ' + st.raw.replace(/\s+/g, ' '));
+            });
+            return L.join('\n');
+        }
+
+        function netInfoText() {
+            const L = ['Netzwerk-Info (EveryMacro, ' + new Date().toLocaleString('de-DE') + ')', '',
+                `WLAN-Name: ${net.ssid}`, `Eigene IP: ${net.ownIp}`, `Gateway: ${net.gateway}`, `Quelle: ${net.source}`];
+            if (net.errors.length) L.push('FEHLER: ' + net.errors.join(' | '));
+            if (net.scan.length) { L.push('', 'Geräte im Netz (HTTP):'); net.scan.forEach(r => L.push(`  ${r.ip}  HTTP ${r.status}${r.server ? '  Server: ' + r.server : ''}${r.title ? '  „' + r.title + '“' : ''}`)); }
+            if (net.device) { L.push('', deviceText(net.device)); }
+            L.push('', 'Hinweis für die KI (EveryMacro-Makros, siehe MACROS.md):');
+            const ip = net.device ? net.device.ip : '192.168.178.20';
+            L.push(`- Aktuelle Denon-Quelle prüfen: const r = await ctx.http.get("http://${ip}/goform/formMainZone_MainZoneXml.xml"); dann <InputFuncSelect><value>…</value> aus r.body lesen (z.B. per Regex /<InputFuncSelect><value>([^<]*)/).`);
+            L.push(`- Power prüfen: <Power><value>STANDBY|ON</value>. Einschalten: ctx.http.get("http://${ip}/goform/formiPhoneAppDirect.xml?ZMON"), Aus: ?ZMOFF (bzw. PWSTANDBY).`);
+            L.push(`- Quelle wählen: ?SI<intern>, z.B. SIDVD, SITV, SISAT/CBL, SIBD, SIGAME, SIMPLAY, SIBT, SINET, SITUNER (immer den INTERNEN Namen verwenden, nicht den umbenannten).`);
+            L.push(`- Lautstärke: ?MVUP / ?MVDOWN / ?MV45. Zwischen Befehlen ggf. await ctx.wait(1000-4000).`);
+            return L.join('\n');
+        }
+
+        async function copyNetInfo() {
+            const text = netInfoText();
+            const ta = document.getElementById('netCopyFallback');
+            const err = await copyText(text);
+            if (!err) { ta.style.display = 'none'; showToast('Kopiert ✓'); addLog('Netzwerk-Info kopiert', 'info'); }
+            else { ta.value = text; ta.style.display = 'block'; ta.select(); showToast('FEHLER beim Kopieren: ' + err, true); addLog('FEHLER beim Kopieren: ' + err, 'error'); }
+        }
+
+        async function initNetSection() {
+            try {
+                const v = features.storage ? await window.EveryAppBridge.storage.get('net_device_ip') : localStorage.getItem('net_device_ip');
+                if (v) document.getElementById('devIp').value = v;
+            } catch (e) {}
+            const wrap = (fn, name) => async () => { try { await fn(); } catch (e) { addLog(`FEHLER ${name}: ${e.message}`, 'error'); showToast(`FEHLER ${name}: ${e.message}`, true); } };
+            document.getElementById('netLoadBtn').addEventListener('click', wrap(loadNetInfo, 'Netzwerk-Info'));
+            document.getElementById('netScanBtn').addEventListener('click', wrap(scanNet, 'Netz-Scan'));
+            document.getElementById('devQueryBtn').addEventListener('click', wrap(queryDevice, 'Geräteabfrage'));
+            document.getElementById('netCopyBtn').addEventListener('click', wrap(copyNetInfo, 'Kopieren'));
         }
 
         // ============================================================================
