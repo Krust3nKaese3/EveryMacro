@@ -731,3 +731,32 @@ macro({
 - Eine Mini-App braucht `"ble"` in den `permissions` ihres Manifests (`everyapp.json`). EveryMacro hat das deklariert, EveryApp fragt beim nächsten Start einmal nach. Ohne diese Berechtigung kommt der Fehler „BLE nicht erlaubt …“.
 - `ctx.ble.notify(addr, svc, chr, true)` merkt sich das Abo dauerhaft. Bricht die Verbindung ab oder startet EveryApp neu, verbindet EveryApp automatisch wieder und abonniert neu, mit wachsender Wartezeit bis maximal 5 Minuten. Ein Neu-Abonnieren per `appStart`/`interval` ist nicht mehr nötig.
 - `ctx.ble.notify(…, false)` entfernt das Abo. `ctx.ble.disconnect(addr)` pausiert die automatische Wiederverbindung bis zum nächsten `connect`/`notify`.
+
+## 🔑 Secrets (API-Keys, Passwörter)
+
+Secrets stehen **nie im Makro-Code**. Das Makro deklariert nur, welche es braucht:
+
+```js
+macro({
+  name: "Tuya Licht",
+  secrets: [
+    { key: "TUYA_SECRET", label: "Tuya Access Secret", hint: "iot.tuya.com → Projekt → Overview" },
+    { key: "TUYA_ID", label: "Tuya Access ID" }
+  ],
+  triggers: [manual()],
+  actions: async (ctx) => {
+    const secret = ctx.secrets.TUYA_SECRET;   // fehlt es -> Fehler "Secret TUYA_SECRET fehlt"
+    ctx.log("Secret geladen: " + secret);      // im Log steht nur "•••"
+  }
+});
+```
+
+- **Beim Speichern** erscheint für jedes fehlende Secret ein maskiertes Feld mit 👁 (anzeigen/verbergen), 📋 (einfügen) und 🗑️ (löschen).
+- Jede Eingabe wird **sofort gespeichert** – du kannst die App verlassen, das Secret holen und zurückkommen; auch teilweise ausgefüllt ist ok. Ein offener Secrets-Dialog öffnet sich nach einem Neuladen wieder.
+- **Später bearbeiten:** Button `🔑N` am Makro.
+- **Gespeichert pro Secret-Key, nicht pro Makro:** Löschst du ein Makro und legst es neu an, sind die Secrets noch da. Makros mit demselben Key teilen sich das Secret.
+- **Fehlt ein Secret beim Ausführen:** Fehler `Secret TUYA_SECRET fehlt` mit Button „🔑 jetzt eintragen“.
+- `ctx.secrets` ist schreibgeschützt und funktioniert in der App und in Hintergrund-Tasks.
+- Secret-Werte werden im Log (App und Hintergrund) durch `•••` ersetzt und stehen in keinem „Für KI kopieren“-Block.
+- ⚠️ **LITE:** Aktuell werden Secrets **unverschlüsselt** app-intern in EveryApp gespeichert (nicht für andere Apps lesbar, aber nicht im Keystore). Mit dem nächsten EveryApp-Build werden sie automatisch in den Android Keystore (expo-secure-store) migriert.
+- Erlaubte Keys: `A-Z a-z 0-9 _ . -`, max. 64 Zeichen.
