@@ -541,3 +541,18 @@ EveryMacro registriert dafür jedes aktivierte Makro über die generische EveryA
 `ctx.notify`, `ctx.vibrate`, `ctx.vars` und zusätzlich `ctx.device` ({name, address}).
 Hintergrund-Logs erscheinen beim nächsten Öffnen von EveryMacro mit dem Präfix `[Hintergrund …]`.
 `interval()` läuft ebenfalls im Hintergrund (mind. 10 s); `appStart()` nur bei geöffnetem EveryMacro.
+
+## Bluetooth-Geräte & Matching
+
+`bluetoothConnected(x)` / `bluetoothDisconnected(x)` lösen aus, wenn `x` gleich dem **Originalnamen**, dem **eigenen Namen (Alias)**
+oder der **MAC-Adresse** ist (Groß-/Kleinschreibung egal, Leerzeichen am Rand egal). Am zuverlässigsten ist die MAC-Adresse, z.B.
+`bluetoothConnected("00:11:22:33:44:55")`.
+
+`ctx.device` enthält: `name` (Original), `alias` (eigener Name), `address` (MAC), `type` (classic/le/dual), `bondState`,
+`majorClass` (z.B. `AUDIO_VIDEO`), `deviceClass`, `uuids`, `connected`.
+
+Im Bereich **„Bluetooth-Geräte“** in EveryMacro: „Laden“ zeigt die verbundenen Geräte, „📋 Für KI kopieren“ kopiert alle Infos als Text,
+den du deiner KI zum Erstellen eines Makros geben kannst.
+
+### `ctx.copy(text)`
+Kopiert Text in die Zwischenablage (im Vordergrund und im Hintergrund).
