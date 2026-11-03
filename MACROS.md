@@ -726,3 +726,8 @@ macro({
   }],
 });
 ```
+
+### BLE: Berechtigung und automatisches Neu-Abonnieren
+- Eine Mini-App braucht `"ble"` in den `permissions` ihres Manifests (`everyapp.json`). EveryMacro hat das deklariert, EveryApp fragt beim nächsten Start einmal nach. Ohne diese Berechtigung kommt der Fehler „BLE nicht erlaubt …“.
+- `ctx.ble.notify(addr, svc, chr, true)` merkt sich das Abo dauerhaft. Bricht die Verbindung ab oder startet EveryApp neu, verbindet EveryApp automatisch wieder und abonniert neu, mit wachsender Wartezeit bis maximal 5 Minuten. Ein Neu-Abonnieren per `appStart`/`interval` ist nicht mehr nötig.
+- `ctx.ble.notify(…, false)` entfernt das Abo. `ctx.ble.disconnect(addr)` pausiert die automatische Wiederverbindung bis zum nächsten `connect`/`notify`.
