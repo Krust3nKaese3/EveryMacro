@@ -772,6 +772,7 @@
 
             // Start enabled macros
             const enabledMacros = macros.filter(m => m.enabled);
+            syncBackgroundTasks(enabledMacros);
             
             for (const macro of enabledMacros) {
                 try {
@@ -779,6 +780,7 @@
                     
                     for (const trigger of macroObj.triggers) {
                         if (trigger.type === 'interval') {
+                            if (hostHandlesTriggers && backgroundEnabled) continue;
                             startIntervalTrigger(macro, trigger);
                         } else if (trigger.type === 'bluetoothConnected' || trigger.type === 'bluetoothDisconnected') {
                             if (hostHandlesTriggers && backgroundEnabled) {
@@ -794,6 +796,51 @@
                     addLog(`Fehler beim Starten von Makro "${macro.name}": ${error.message}`, 'error');
                 }
             }
+        }
+
+
+        // Registers enabled macros as generic EveryApp background tasks (see EveryApp docs/BACKGROUND.md).
+        // Bluetooth + interval triggers then run in EveryApp, also when EveryMacro/EveryApp is closed.
+        async function syncBackgroundTasks(enabledMacros) {
+            if (!hostHandlesTriggers || typeof window.EveryAppBridge.background.registerTask !== 'function') return;
+            try {
+                await window.EveryAppBridge.background.unregisterAll();
+                if (!backgroundEnabled) return;
+                for (const macro of enabledMacros) {
+                    let obj;
+                    try { obj = parseMacro(macro.code); } catch (e) { continue; }
+                    const triggers = (obj.triggers || []).filter(t =>
+                        t.type === 'bluetoothConnected' || t.type === 'bluetoothDisconnected' || t.type === 'interval');
+                    if (triggers.length === 0) continue;
+                    await window.EveryAppBridge.background.registerTask({
+                        id: macro.id, name: macro.name, triggers, code: buildTaskCode(macro)
+                    });
+                }
+                addLog('Hintergrund-Tasks in EveryApp registriert', 'info');
+            } catch (e) {
+                addLog('FEHLER beim Registrieren der Hintergrund-Tasks: ' + e.message, 'error');
+            }
+        }
+
+        function buildTaskCode(macro) {
+            return `
+const __code = ${JSON.stringify(macro.code)};
+const __dsl = {
+  bluetoothConnected: (n = null) => ({ type: 'bluetoothConnected', nameOrAddress: n }),
+  bluetoothDisconnected: (n = null) => ({ type: 'bluetoothDisconnected', nameOrAddress: n }),
+  appStart: () => ({ type: 'appStart' }), interval: (ms) => ({ type: 'interval', ms }), manual: () => ({ type: 'manual' }),
+};
+let __m = null;
+new Function('macro', ...Object.keys(__dsl), __code)((d) => { __m = d; }, ...Object.values(__dsl));
+if (!__m) throw new Error('macro({...}) wurde nicht aufgerufen');
+const __varsKey = 'macro_vars_' + ${JSON.stringify(macro.id)};
+let __vars = {};
+try { __vars = JSON.parse((await ctx.storage.get(__varsKey)) || '{}'); } catch (e) {}
+ctx.vars = new Proxy(__vars, { set: (t, p, v) => { t[p] = v; ctx.storage.set(__varsKey, JSON.stringify(t)); return true; } });
+ctx.device = event.device;
+for (const c of (__m.conditions || [])) { if (!(await c(ctx))) { ctx.log('übersprungen (Bedingung nicht erfüllt)'); return; } }
+await __m.actions(ctx);
+`;
         }
 
         function stopMacro(macroId) {

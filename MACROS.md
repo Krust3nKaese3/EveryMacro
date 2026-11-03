@@ -537,7 +537,7 @@ macro({
 
 Ist der **Hintergrundmodus** an, führt EveryApp Makros mit `bluetoothConnected()` / `bluetoothDisconnected()` selbst aus –
 auch wenn EveryMacro geschlossen ist, EveryApp im Hintergrund läuft oder aus den letzten Apps weggewischt wurde.
-EveryApp liest dafür die gespeicherten, aktivierten Makros. In der Hintergrundausführung gibt es `ctx.log`, `ctx.wait`, `ctx.http.get/request`,
+EveryMacro registriert dafür jedes aktivierte Makro über die generische EveryApp-API `background.registerTask` (siehe EveryApp docs/BACKGROUND.md). In der Hintergrundausführung gibt es `ctx.log`, `ctx.wait`, `ctx.http.get/request`,
 `ctx.notify`, `ctx.vibrate`, `ctx.vars` und zusätzlich `ctx.device` ({name, address}).
 Hintergrund-Logs erscheinen beim nächsten Öffnen von EveryMacro mit dem Präfix `[Hintergrund …]`.
-`interval()` und `appStart()` laufen weiterhin nur, solange EveryMacro geöffnet ist.
+`interval()` läuft ebenfalls im Hintergrund (mind. 10 s); `appStart()` nur bei geöffnetem EveryMacro.
