@@ -702,15 +702,16 @@
                 const currentState = await window.EveryAppBridge.background.isEnabled();
                 
                 if (currentState) {
-                    // Cannot disable once enabled - just inform user
-                    alert('Hintergrundmodus ist aktiv und kann nicht deaktiviert werden');
+                    await window.EveryAppBridge.background.disable();
+                    updateBackgroundUI(false);
+                    addLog('Hintergrundmodus deaktiviert', 'info');
                 } else {
                     await window.EveryAppBridge.background.enable();
                     updateBackgroundUI(true);
                     addLog('Hintergrundmodus aktiviert', 'info');
                 }
             } catch (error) {
-                addLog('Fehler beim Aktivieren des Hintergrundmodus: ' + error.message, 'error');
+                addLog('Fehler beim Umschalten des Hintergrundmodus: ' + error.message, 'error');
             }
         }
 
