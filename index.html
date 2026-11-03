@@ -577,13 +577,18 @@
         }
 
         function validateMacroCode(code) {
+            let macroFunc;
             try {
-                const macroFunc = new Function('macro', code + '\nreturn __macroData;');
+                macroFunc = new Function('macro', code);
+            } catch (error) {
+                return { valid: false, error: 'Syntax-Fehler im Makro-Code: ' + error.message };
+            }
+
+            try {
                 let capturedMacro = null;
                 
                 const mockMacro = (data) => {
                     capturedMacro = data;
-                    return { __macroData: data };
                 };
 
                 macroFunc(mockMacro);
@@ -606,7 +611,7 @@
 
                 return { valid: true, macro: capturedMacro };
             } catch (error) {
-                return { valid: false, error: 'Syntax-Fehler: ' + error.message };
+                return { valid: false, error: 'Fehler beim Auswerten des Makros: ' + error.message };
             }
         }
 
@@ -777,16 +782,20 @@
         }
 
         function parseMacro(code) {
-            const macroFunc = new Function('macro', code + '\nreturn __macroData;');
-            let capturedMacro = null;
-            
-            const mockMacro = (data) => {
-                capturedMacro = data;
-                return { __macroData: data };
-            };
+            try {
+                const macroFunc = new Function('macro', code);
+                let capturedMacro = null;
+                
+                const mockMacro = (data) => {
+                    capturedMacro = data;
+                };
 
-            macroFunc(mockMacro);
-            return capturedMacro;
+                macroFunc(mockMacro);
+                return capturedMacro;
+            } catch (error) {
+                addLog(`Fehler beim Parsen des Makro-Codes: ${error.message}`, 'error');
+                throw error;
+            }
         }
 
         function startIntervalTrigger(macro, trigger) {
