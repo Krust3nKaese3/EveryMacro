@@ -330,3 +330,8 @@ macro({
 ---
 
 **Letzte Aktualisierung:** 2024 (basierend auf EveryApp v1.0)
+
+## Hintergrund (ab EveryApp mit nativem Makro-Task)
+- Nur Bluetooth-Trigger laufen im Hintergrund; `interval()`/`appStart()` nur bei geöffnetem EveryMacro.
+- Hintergrundmodus muss an sein (Benachrichtigung "EveryApp aktiv"). Akku-Optimierung für EveryApp auf "Nicht eingeschränkt" stellen.
+- Nach "Beenden erzwingen" in den Android-Einstellungen startet nichts mehr, bis die App wieder geöffnet wird.

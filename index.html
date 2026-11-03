@@ -389,6 +389,8 @@
         let globalLog = [];
         let runningIntervals = {};
         let bluetoothListenersActive = false;
+        let hostHandlesTriggers = false;
+        let backgroundEnabled = false;
         let appStartListenerActive = false;
         let editingMacroId = null;
 
@@ -487,7 +489,18 @@
             try {
                 if (!features.background) return;
                 const enabled = await window.EveryAppBridge.background.isEnabled();
+                backgroundEnabled = !!enabled;
                 updateBackgroundUI(enabled);
+                if (typeof window.EveryAppBridge.background.handlesTriggers === 'function') {
+                    try { hostHandlesTriggers = !!(await window.EveryAppBridge.background.handlesTriggers()); } catch (e) { hostHandlesTriggers = false; }
+                }
+                if (hostHandlesTriggers && typeof window.EveryAppBridge.background.getLog === 'function') {
+                    try {
+                        const bgLog = JSON.parse(await window.EveryAppBridge.background.getLog() || '[]');
+                        // oldest first so newest ends up on top
+                        bgLog.slice(0, 20).reverse().forEach(e => addLog('[Hintergrund ' + e.timestamp + '] ' + e.message, e.level || 'info'));
+                    } catch (e) { addLog('Hintergrund-Log nicht lesbar: ' + e.message, 'error'); }
+                }
             } catch (error) {
                 addLog('Hintergrundstatus konnte nicht geladen werden', 'error');
             }
@@ -708,12 +721,17 @@
                 
                 if (currentState) {
                     await window.EveryAppBridge.background.disable();
+                    backgroundEnabled = false;
                     updateBackgroundUI(false);
+                    startActiveMacros();
                     addLog('Hintergrundmodus deaktiviert', 'info');
                 } else {
                     await window.EveryAppBridge.background.enable();
+                    backgroundEnabled = true;
                     updateBackgroundUI(true);
                     addLog('Hintergrundmodus aktiviert', 'info');
+                    if (hostHandlesTriggers) addLog('Bluetooth-Trigger laufen jetzt in EveryApp (auch wenn geschlossen)', 'info');
+                    startActiveMacros();
                 }
             } catch (error) {
                 addLog('Fehler beim Umschalten des Hintergrundmodus: ' + error.message, 'error');
@@ -763,6 +781,10 @@
                         if (trigger.type === 'interval') {
                             startIntervalTrigger(macro, trigger);
                         } else if (trigger.type === 'bluetoothConnected' || trigger.type === 'bluetoothDisconnected') {
+                            if (hostHandlesTriggers && backgroundEnabled) {
+                                // EveryApp runs this trigger natively (also when closed) - avoid double execution
+                                continue;
+                            }
                             startBluetoothTrigger(macro, trigger);
                         } else if (trigger.type === 'appStart') {
                             startAppStartTrigger(macro, trigger);
