@@ -6,123 +6,115 @@ Dieses Dokument beschreibt die aktuellen Limitationen von EveryMacro und erklär
 
 ## Aktuelle Limitationen
 
-### 1. Bluetooth-Trigger (erfordert neue EveryApp-APIs)
+### 1. Bluetooth-Trigger
 
-**Status:** ⏳ Nicht verfügbar
+**Status:** ✅ VERFÜGBAR (ab EveryApp v2.0, PR #3)
 
-**Betroffen:**
-- `bluetoothConnected(name)` Trigger
-- `bluetoothDisconnected(name)` Trigger
+**Implementiert in:** https://github.com/Krust3nKaese3/EveryApp/pull/3
 
-**Grund:**
-EveryApp bietet aktuell nur `bluetooth.scan()`, `connect()`, `disconnect()` - aber keine **Event-basierte Benachrichtigung** bei Verbindungsänderungen.
+**APIs:**
+- ✅ `EveryAppBridge.events.on('bluetooth.connected', callback)`
+- ✅ `EveryAppBridge.events.on('bluetooth.disconnected', callback)`
+- ✅ `EveryAppBridge.bluetooth.getConnectedDevices()`
 
-**Workaround:**
-Keine vollständige Alternative. Interval-basiertes Polling wäre möglich, aber ineffizient und unzuverlässig.
+**Funktionen:**
+- Classic Bluetooth Events (nicht BLE)
+- Automatische Erkennung von Verbindungen/Trennungen
+- Gerätefilterung nach Name oder MAC-Adresse
 
-**Lösung:**
-Neue Bridge-APIs erforderlich:
-- `EveryAppBridge.events.on('bluetooth.connected', callback)`
-- `EveryAppBridge.events.on('bluetooth.disconnected', callback)`
-- `EveryAppBridge.bluetooth.getConnectedDevices()`
-
-**Dokumentation:** Siehe `EVERYMACRO_BRIDGE_REQUIREMENTS.md`
+**Keine Einschränkungen mehr!**
 
 ---
 
-### 2. App-Start-Trigger (erfordert Hintergrundmodus)
+### 2. App-Start-Trigger
 
-**Status:** ⏳ Nicht verfügbar
+**Status:** ✅ VERFÜGBAR (ab EveryApp v2.0, PR #3)
 
-**Betroffen:**
-- `appStart()` Trigger
+**Implementiert in:** https://github.com/Krust3nKaese3/EveryApp/pull/3
 
-**Grund:**
-WebViews werden beim Schließen von EveryApp beendet. Ein App-Start kann daher nicht erkannt werden.
+**APIs:**
+- ✅ `EveryAppBridge.events.on('app.start', callback)`
+- ✅ Funktioniert im Vordergrund UND Hintergrund
 
-**Workaround:**
-Keine.
+**Details:**
+- Event wird 100ms nach WebView-Load gefeuert
+- Enthält Timestamp im Payload: `{ timestamp: number }`
 
-**Lösung:**
-Background-Mode erforderlich:
-- `EveryAppBridge.background.enable()`
-- `EveryAppBridge.events.on('app.start', callback)`
+**Keine Einschränkungen mehr!**
 
 ---
 
 ### 3. Interval-Trigger im Hintergrund
 
-**Status:** ⚠️ Nur im Vordergrund verfügbar
+**Status:** ✅ VERFÜGBAR (ab EveryApp v2.0, PR #3)
 
-**Betroffen:**
-- `interval(ms)` Trigger
+**Implementiert in:** https://github.com/Krust3nKaese3/EveryApp/pull/3
 
-**Aktuell:**
-Funktioniert, **solange EveryApp geöffnet ist**. Wenn die App geschlossen oder EveryMacro verlassen wird, stoppt der Interval-Timer.
+**APIs:**
+- ✅ `EveryAppBridge.background.enable()`
+- ✅ `EveryAppBridge.background.disable()`
+- ✅ `EveryAppBridge.background.isEnabled()`
 
-**Workaround:**
-App offen lassen (unpraktisch).
+**Details:**
+- Android Foreground Service mit persistenter Notification
+- Hält WebView am Leben, auch bei Screen-Off
+- Benutzer muss Battery Optimization deaktivieren (Prompt)
+- Interval-Trigger laufen unbegrenzt im Hintergrund
 
-**Lösung:**
-Hintergrundmodus erforderlich (siehe oben).
+**Keine Einschränkungen mehr!**
 
 ---
 
 ### 4. Erweiterte HTTP-API
 
-**Status:** ⚠️ Eingeschränkt verfügbar
+**Status:** ✅ VERFÜGBAR (ab EveryApp v2.0, PR #3)
 
-**Betroffen:**
-- `ctx.http.request()` mit Custom Headers, Timeout, POST/PUT/DELETE
+**Implementiert in:** https://github.com/Krust3nKaese3/EveryApp/pull/3
 
-**Aktuell:**
-- ✅ GET-Requests via `EveryAppBridge.http.fetch()` funktionieren
-- ❌ POST/PUT/DELETE eingeschränkt (fetch-API-Abhängig)
-- ❌ Keine Custom Headers
-- ❌ Kein konfigurierbarer Timeout
-
-**Workaround:**
-Grundlegende GET-Requests sind möglich. Für APIs mit Custom Headers oder POST-Body: Feature fehlt.
-
-**Lösung:**
-Neue Bridge-API:
+**API:**
 ```javascript
-EveryAppBridge.http.request({
-  url: string,
-  method: string,
-  headers?: object,
-  body?: string,
-  timeoutMs?: number
-})
+const response = await EveryAppBridge.http.request({
+  url: 'http://192.168.1.100/api',
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ data: 'value' }),
+  timeoutMs: 5000
+});
+// Returns: { status: number, headers: object, body: string }
 ```
+
+**Features:**
+- ✅ Alle HTTP-Methoden (GET, POST, PUT, DELETE, etc.)
+- ✅ Custom Headers
+- ✅ Konfigurierbarer Timeout
+- ✅ Response Headers verfügbar
+- ✅ Cleartext HTTP (`http://`) für lokale Geräte
+
+**Keine Einschränkungen mehr!**
 
 ---
 
 ### 5. Hintergrundmodus generell
 
-**Status:** ❌ Nicht verfügbar
+**Status:** ✅ VERFÜGBAR (ab EveryApp v2.0, PR #3)
 
-**Betroffen:**
-- Alle Trigger laufen nur wenn App geöffnet ist
-- `interval()` stoppt beim Schließen
-- `bluetoothConnected()` würde nicht erkannt werden
+**Implementiert in:** https://github.com/Krust3nKaese3/EveryApp/pull/3
 
-**Grund:**
-React Native WebView wird beim Minimieren/Schließen pausiert oder beendet.
+**Implementation:**
+- Android Foreground Service mit Notification
+- WebView bleibt am Leben bei Screen-Off
+- Alle Trigger laufen unbegrenzt im Hintergrund
 
-**Workaround:**
-Keine echte Lösung. App offen lassen.
+**User Experience:**
+- Persistent Notification: "EveryApp Running - Background mini-apps are active"
+- Battery Optimization Dialog (einmalig)
+- Kann mit `background.disable()` gestoppt werden
 
-**Lösung:**
-Background-Service in EveryApp:
-- Android Foreground Service
-- Notification: "EveryMacro läuft im Hintergrund"
-- WebView-Instanz oder leichtgewichtige JS-Engine (Hermes) im Hintergrund
+**Permissions:**
+- ✅ `background` in `everyapp.json`
+- ✅ User-Consent erforderlich
 
-**Anforderungen:**
-- Permission `background` in `everyapp.json`
-- User-Consent beim Aktivieren
-- Battery-Optimierung beachten
+**Keine Einschränkungen mehr!**
 
 ---
 
@@ -230,65 +222,65 @@ macro({
 
 ## Zusammenfassung: Was funktioniert JETZT?
 
-### ✅ Vollständig funktionsfähig (ohne neue APIs)
+### ✅ ALLE Features vollständig verfügbar (ab EveryApp v2.0)
 
 1. **Manual-Trigger:** "Jetzt testen" Button ✅
-2. **HTTP GET-Requests:** `ctx.http.get()` (via fetch) ✅
-3. **Benachrichtigungen:** `ctx.notify()` ✅
-4. **Vibration:** `ctx.vibrate()` ✅
-5. **Logs:** `ctx.log()` ✅
-6. **Persistente Variablen:** `ctx.vars` ✅
-7. **Storage:** Makros werden gespeichert ✅
-8. **Code-Validierung:** Syntax-Check beim Speichern ✅
+2. **Bluetooth-Trigger:** bluetoothConnected/Disconnected ✅
+3. **App-Start-Trigger:** appStart() ✅
+4. **Interval-Trigger:** Auch im Hintergrund ✅
+5. **HTTP-API:** GET, POST, PUT, DELETE mit Custom Headers & Timeout ✅
+6. **Hintergrundmodus:** background.enable/disable/isEnabled ✅
+7. **Benachrichtigungen:** ctx.notify() ✅
+8. **Vibration:** ctx.vibrate() ✅
+9. **Logs:** ctx.log() ✅
+10. **Persistente Variablen:** ctx.vars ✅
+11. **Storage:** Makros werden gespeichert ✅
+12. **Code-Validierung:** Syntax-Check beim Speichern ✅
 
-### ⚠️ Eingeschränkt funktionsfähig
+### ⚠️ Verbleibende Einschränkungen
 
-1. **Interval-Trigger:** Nur im Vordergrund ⚠️
-2. **HTTP POST/PUT:** Eingeschränkt (keine Custom Headers) ⚠️
-
-### ❌ Nicht verfügbar (ohne neue APIs)
-
-1. **Bluetooth-Trigger:** bluetoothConnected/Disconnected ❌
-2. **App-Start-Trigger:** appStart() ❌
-3. **Hintergrundmodus:** background.enable() ❌
-4. **Erweiterte HTTP-API:** Custom Headers, Timeout ❌
+**Keine kritischen Einschränkungen mehr!** Alle Kern-Features sind implementiert.
 
 ---
 
-## Roadmap: Wann werden Features verfügbar?
+## Roadmap: Feature-Status
 
-### Phase 1: **Jetzt** (ohne neue APIs)
-- ✅ Manual-Testing und einfache GET-Requests
-- ✅ Makro-Entwicklung und Validierung
-- ✅ Denon-Beispiel funktioniert **wenn manuell getestet**
+### ✅ Phase 1 & 2: ABGESCHLOSSEN (EveryApp v2.0)
 
-### Phase 2: **Neue EveryApp-APIs** (EveryApp v2.0?)
-- ⏳ Bluetooth-Trigger
-- ⏳ Erweiterte HTTP-API
-- ⏳ Hintergrundmodus
-- ⏳ App-Start-Trigger
+Alle Kern-Features sind implementiert und verfügbar:
+- ✅ Bluetooth-Trigger (PR #3)
+- ✅ Erweiterte HTTP-API (PR #3)
+- ✅ Hintergrundmodus (PR #3)
+- ✅ App-Start-Trigger (PR #3)
+- ✅ Event-System (PR #3)
 
-**Zeitrahmen:** Abhängig von EveryApp-Entwicklung
+**Status:** PRODUCTION-READY
 
-### Phase 3: **Erweiterte Features** (EveryMacro v2.0)
+### Phase 3: **Erweiterte Features** (EveryMacro v2.0, optional)
 - ⏳ Weitere Trigger (WiFi, Standort, Zeit-basiert)
 - ⏳ Makro-Prioritäten
 - ⏳ Makro-Sharing (QR-Code, Export/Import)
 - ⏳ Vorlagen-Bibliothek
+- ⏳ Makro-Debugging UI
+
+**Priorität:** Low (Nice-to-have)
 
 ---
 
-## Workarounds für Benutzer
+## Update-Anleitung
 
-### "Ich will Bluetooth-Trigger, aber sie funktionieren nicht"
+### Stelle sicher, dass du EveryApp v2.0 oder neuer verwendest
 
-**Lösung:**
-1. Prüfe ob EveryApp die neuen APIs unterstützt (Warnmeldung beachten)
-2. Falls nicht: Verwende Manual-Trigger als Test
-3. Warte auf EveryApp-Update
+**So prüfst du:**
+1. Öffne EveryMacro in EveryApp
+2. Keine Warnmeldung "Einige Funktionen fehlen" → Du hast v2.0+
+3. Mit Warnmeldung → Update EveryApp auf neueste Version
 
-**Alternative:**
-Nutze Interval-Trigger mit `bluetooth.scan()` (ineffizient, aber funktioniert):
+**Alle Features funktionieren ab EveryApp v2.0 (PR #3 gemerged).**
+
+### Legacy-Workaround (nur für alte EveryApp-Versionen)
+
+Falls du eine alte EveryApp-Version ohne PR #3 verwendest:
 
 ```javascript
 macro({
