@@ -1001,7 +1001,7 @@ await __m.actions(ctx);
                 ctx.vibrate = () => { throw new Error('Vibration nicht verfügbar'); };
             }
 
-            ctx.copy = (text) => copyText(String(text ?? ''));
+            ctx.copy = async (text) => { const err = await copyText(String(text ?? '')); if (err) throw new Error('Kopieren fehlgeschlagen: ' + err); };
 
             // Persistent storage
             ctx.vars = createVarsProxy(macro.id);
@@ -1083,24 +1083,63 @@ await __m.actions(ctx);
             return lines.join('\n');
         }
 
-        async function copyText(text) {
+        function showToast(msg, isError) {
+            let t = document.getElementById('emToast');
+            if (!t) {
+                t = document.createElement('div'); t.id = 'emToast';
+                t.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);padding:10px 16px;border-radius:8px;z-index:9999;font-size:14px;max-width:90%;user-select:text;-webkit-user-select:text';
+                document.body.appendChild(t);
+            }
+            t.textContent = msg; t.style.background = isError ? '#c62828' : '#2e7d32'; t.style.display = 'block';
+            clearTimeout(t._h); t._h = setTimeout(() => { t.style.display = 'none'; }, isError ? 8000 : 2000);
+        }
+
+        // Synchronous copy inside the click (keeps the user gesture) - works in Android WebView
+        function execCopy(text) {
             try {
-                if (window.EveryAppBridge && window.EveryAppBridge.clipboard) { await window.EveryAppBridge.clipboard.setString(text); return true; }
-            } catch (e) { addLog('Bridge-Clipboard fehlgeschlagen: ' + e.message, 'error'); }
-            try { await navigator.clipboard.writeText(text); return true; } catch (e) {}
-            return false;
+                const ta = document.createElement('textarea');
+                ta.value = text; ta.setAttribute('readonly', '');
+                ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;';
+                document.body.appendChild(ta); ta.focus(); ta.select(); ta.setSelectionRange(0, text.length);
+                const ok = document.execCommand('copy');
+                document.body.removeChild(ta);
+                return !!ok;
+            } catch (e) { return false; }
+        }
+
+        // Returns null on success, otherwise a copyable error text
+        async function copyText(text) {
+            const errors = [];
+            const execOk = execCopy(text);
+            const br = window.EveryAppBridge;
+            if (br && br.clipboard && typeof br.clipboard.setString === 'function') {
+                try { await br.clipboard.setString(text); return null; }
+                catch (e) { errors.push('Bridge clipboard.setString: ' + e.message); }
+            } else {
+                errors.push('Bridge hat kein clipboard (EveryApp-JS veraltet? SrvEveryApp neu laden)');
+            }
+            if (execOk) return null;
+            errors.push('execCommand(copy) fehlgeschlagen');
+            try {
+                if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); return null; }
+                errors.push('navigator.clipboard nicht verfügbar (kein secure context)');
+            } catch (e) { errors.push('navigator.clipboard: ' + e.message); }
+            return errors.join(' | ');
         }
 
         async function copyBtInfo() {
             if (btDevices.length === 0) await loadBtDevices();
             const text = btInfoText();
             const ta = document.getElementById('btCopyFallback');
-            if (await copyText(text)) {
+            const err = await copyText(text);
+            if (!err) {
                 ta.style.display = 'none';
+                showToast('Kopiert ✓');
                 addLog('Bluetooth-Infos kopiert (' + btDevices.length + ' Geräte)', 'info');
             } else {
                 ta.value = text; ta.style.display = 'block'; ta.select();
-                addLog('Kopieren nicht möglich – Text unten markieren und manuell kopieren', 'error');
+                showToast('FEHLER beim Kopieren: ' + err, true);
+                addLog('FEHLER beim Kopieren: ' + err + ' – Text unten markieren und manuell kopieren', 'error');
             }
         }
 
