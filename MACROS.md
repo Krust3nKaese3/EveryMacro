@@ -803,3 +803,21 @@ macro({
 - Secret-Werte werden im Log (App und Hintergrund) durch `•••` ersetzt und stehen in keinem „Für KI kopieren“-Block.
 - ⚠️ **LITE:** Aktuell werden Secrets **unverschlüsselt** app-intern in EveryApp gespeichert (nicht für andere Apps lesbar, aber nicht im Keystore). Mit dem nächsten EveryApp-Build werden sie automatisch in den Android Keystore (expo-secure-store) migriert.
 - Erlaubte Keys: `A-Z a-z 0-9 _ . -`, max. 64 Zeichen.
+
+## 🔗 Makros per Link importieren
+
+**Formate** (nur `https`):
+- Deep-Link: `everyapp://everymacro/import?url=<URL-encodete https-Raw-URL>` oder `everyapp://everymacro/import?gist=<gist-id>`
+  (auf Dev-Client-Builds auch `exp+everyapp://everymacro/import?...`). Braucht den nächsten nativen Build (Scheme `everyapp`).
+- Ohne Deep-Link (geht sofort): Im Abschnitt *Makros* URL ins Feld → **Import**, oder **📋 Aus Zwischenablage importieren**.
+  Akzeptiert: `https://…` Raw-URL, `https://gist.github.com/<user>/<id>`, nackte Gist-ID, einen `everyapp://…`-Link oder direkt den Makro-Code.
+- Gist: geladen über `https://api.github.com/gists/<id>`; genommen wird die erste Datei `*.macro.js`/`*.macro.json`, sonst die erste Datei.
+- Inhalt: Makro-Code (`macro({...})`) oder JSON `{"code":"macro({...})"}` bzw. ein Array davon (mehrere Makros).
+
+**Upsert:** Schlüssel ist das Feld `id` im Makro-Objekt, sonst `name`.
+```js
+macro({ id: "deckenlampe-an", name: "Deckenlampe an", triggers: [manual()], run: async (ctx) => { /* … */ } });
+```
+Vor dem Speichern: Dialog „Makro X wird aktualisiert“ bzw. „… wird neu angelegt“ (OK/Abbrechen).
+Beim Aktualisieren bleiben gespeicherte Secrets und `ctx.vars` erhalten (interne ID ändert sich nicht), ebenso aktiviert/deaktiviert und Ausführungszähler.
+Fehler (HTTP-Status, kein https, ungültiges Makro) erscheinen in einer roten Box mit **📋 Fehler kopieren**.
