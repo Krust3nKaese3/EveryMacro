@@ -1,0 +1,7 @@
+{
+  "name": "EveryMacro",
+  "version": "1.0.0",
+  "description": "Automatisierung mit benutzerdefinierten Makros (JavaScript)",
+  "entrypoint": "index.html",
+  "permissions": ["storage", "http", "bluetooth", "notifications", "vibration", "background"]
+}

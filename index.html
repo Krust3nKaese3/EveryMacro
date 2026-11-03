@@ -1,0 +1,1019 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>EveryMacro</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            min-height: 100vh;
+            color: white;
+            overflow-x: hidden;
+            padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+        }
+
+        .header {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            padding: 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            font-weight: bold;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .icon-btn {
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            color: white;
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .icon-btn:active {
+            transform: scale(0.95);
+        }
+
+        .content {
+            padding: 16px;
+        }
+
+        .warning {
+            background: rgba(255, 193, 7, 0.9);
+            color: #333;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 12px;
+            font-size: 14px;
+        }
+
+        .section {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
+            backdrop-filter: blur(10px);
+        }
+
+        .section-title {
+            font-size: 16px;
+            font-weight: bold;
+            margin-bottom: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .background-toggle {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+        }
+
+        .toggle-switch {
+            position: relative;
+            width: 48px;
+            height: 24px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .toggle-switch.active {
+            background: #4CAF50;
+        }
+
+        .toggle-switch::after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 20px;
+            height: 20px;
+            background: white;
+            border-radius: 50%;
+            transition: transform 0.3s;
+        }
+
+        .toggle-switch.active::after {
+            transform: translateX(24px);
+        }
+
+        .macro-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .macro-item {
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 8px;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .macro-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .macro-name {
+            font-weight: bold;
+            font-size: 15px;
+            flex: 1;
+        }
+
+        .macro-actions {
+            display: flex;
+            gap: 6px;
+        }
+
+        .small-btn {
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            color: white;
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .small-btn:active {
+            transform: scale(0.95);
+        }
+
+        .macro-meta {
+            font-size: 12px;
+            opacity: 0.8;
+        }
+
+        .macro-error {
+            background: rgba(244, 67, 54, 0.3);
+            padding: 8px;
+            border-radius: 6px;
+            font-size: 12px;
+            margin-top: 4px;
+        }
+
+        .btn {
+            background: white;
+            color: #1e3c72;
+            border: none;
+            padding: 14px 20px;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 10px;
+            cursor: pointer;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn:active {
+            transform: scale(0.98);
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            opacity: 0.7;
+            font-size: 14px;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: #1e3c72;
+            border-radius: 12px;
+            padding: 20px;
+            max-width: 500px;
+            width: 100%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 16px;
+        }
+
+        .textarea {
+            width: 100%;
+            min-height: 300px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 8px;
+            color: white;
+            padding: 12px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            resize: vertical;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 16px;
+        }
+
+        .modal-btn {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            color: white;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+
+        .modal-btn.primary {
+            background: #4CAF50;
+        }
+
+        .log-view {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            padding: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+
+        .log-entry {
+            margin-bottom: 6px;
+            line-height: 1.4;
+        }
+
+        .log-entry.error {
+            color: #ff6b6b;
+        }
+
+        .log-entry.info {
+            color: #51cf66;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>⚙️ EveryMacro</h1>
+        <div class="header-actions">
+            <button class="icon-btn" id="showLogBtn" title="Log anzeigen">📋</button>
+        </div>
+    </div>
+
+    <div class="content">
+        <div id="noBridgeWarning" class="warning" style="display: none;">
+            ⚠️ Bridge nicht verfügbar - App läuft außerhalb von EveryApp
+        </div>
+
+        <div id="missingFeaturesWarning" class="warning" style="display: none;">
+            ⚠️ Einige Funktionen fehlen in dieser EveryApp-Version: <span id="missingFeaturesList"></span>
+        </div>
+
+        <div class="section">
+            <div class="section-title">
+                <span>Hintergrundmodus</span>
+            </div>
+            <div class="background-toggle">
+                <span>Makros im Hintergrund ausführen:</span>
+                <div class="toggle-switch" id="backgroundToggle"></div>
+                <span id="backgroundStatus">AUS</span>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">
+                <span>Makros</span>
+                <button class="small-btn" id="addMacroBtn">+ Hinzufügen</button>
+            </div>
+            <div class="macro-list" id="macroList">
+                <div class="empty-state">
+                    Noch keine Makros vorhanden.<br>
+                    Erstelle dein erstes Makro mit "Hinzufügen".
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">
+                <span>Global Log</span>
+                <button class="small-btn" id="clearLogBtn">Löschen</button>
+            </div>
+            <div class="log-view" id="logView">
+                <div class="log-entry info">EveryMacro gestartet</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add/Edit Macro Modal -->
+    <div class="modal" id="macroModal">
+        <div class="modal-content">
+            <div class="modal-header">Makro <span id="modalMode">hinzufügen</span></div>
+            <textarea class="textarea" id="macroCodeInput" placeholder="Makro-Code hier einfügen..."></textarea>
+            <div id="validationError" class="macro-error" style="display: none;"></div>
+            <div class="modal-actions">
+                <button class="modal-btn" id="cancelModalBtn">Abbrechen</button>
+                <button class="modal-btn primary" id="saveModalBtn">Speichern</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Log Modal -->
+    <div class="modal" id="logModal">
+        <div class="modal-content">
+            <div class="modal-header">Vollständiger Log</div>
+            <div class="log-view" style="max-height: 60vh;" id="fullLogView"></div>
+            <div class="modal-actions">
+                <button class="modal-btn" id="closeLogModalBtn">Schließen</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================================================
+        // GLOBALS & STATE
+        // ============================================================================
+        
+        const hasBridge = typeof window.EveryAppBridge !== 'undefined';
+        let macros = [];
+        let globalLog = [];
+        let runningIntervals = {};
+        let bluetoothListenersActive = false;
+        let appStartListenerActive = false;
+        let editingMacroId = null;
+
+        // Feature detection
+        const features = {
+            bluetooth: hasBridge && window.EveryAppBridge.bluetooth && 
+                      typeof window.EveryAppBridge.bluetooth.getConnectedDevices === 'function',
+            events: hasBridge && window.EveryAppBridge.events &&
+                   typeof window.EveryAppBridge.events.on === 'function',
+            http: hasBridge && window.EveryAppBridge.http &&
+                 typeof window.EveryAppBridge.http.request === 'function',
+            background: hasBridge && window.EveryAppBridge.background &&
+                       typeof window.EveryAppBridge.background.enable === 'function',
+            storage: hasBridge && window.EveryAppBridge.storage,
+            notifications: hasBridge && window.EveryAppBridge.notifications,
+            vibration: hasBridge && window.EveryAppBridge.vibration
+        };
+
+        // ============================================================================
+        // INITIALIZATION
+        // ============================================================================
+
+        init();
+
+        async function init() {
+            checkBridge();
+            await loadMacros();
+            await loadBackgroundState();
+            setupEventListeners();
+            startActiveMacros();
+            addLog('EveryMacro initialisiert', 'info');
+        }
+
+        function checkBridge() {
+            if (!hasBridge) {
+                document.getElementById('noBridgeWarning').style.display = 'block';
+                return;
+            }
+
+            const missing = [];
+            if (!features.bluetooth) missing.push('Bluetooth');
+            if (!features.events) missing.push('Events');
+            if (!features.http) missing.push('HTTP');
+            if (!features.background) missing.push('Hintergrund');
+
+            if (missing.length > 0) {
+                document.getElementById('missingFeaturesList').textContent = missing.join(', ');
+                document.getElementById('missingFeaturesWarning').style.display = 'block';
+            }
+        }
+
+        function setupEventListeners() {
+            document.getElementById('addMacroBtn').addEventListener('click', () => openMacroModal());
+            document.getElementById('cancelModalBtn').addEventListener('click', closeMacroModal);
+            document.getElementById('saveModalBtn').addEventListener('click', saveMacro);
+            document.getElementById('backgroundToggle').addEventListener('click', toggleBackground);
+            document.getElementById('clearLogBtn').addEventListener('click', clearLog);
+            document.getElementById('showLogBtn').addEventListener('click', showFullLog);
+            document.getElementById('closeLogModalBtn').addEventListener('click', () => {
+                document.getElementById('logModal').classList.remove('active');
+            });
+        }
+
+        // ============================================================================
+        // STORAGE
+        // ============================================================================
+
+        async function loadMacros() {
+            try {
+                if (!features.storage) {
+                    macros = JSON.parse(localStorage.getItem('macros') || '[]');
+                } else {
+                    const data = await window.EveryAppBridge.storage.get('macros');
+                    macros = data ? JSON.parse(data) : [];
+                }
+                renderMacros();
+            } catch (error) {
+                addLog('Fehler beim Laden der Makros: ' + error.message, 'error');
+            }
+        }
+
+        async function saveMacros() {
+            try {
+                const data = JSON.stringify(macros);
+                if (!features.storage) {
+                    localStorage.setItem('macros', data);
+                } else {
+                    await window.EveryAppBridge.storage.set('macros', data);
+                }
+            } catch (error) {
+                addLog('Fehler beim Speichern der Makros: ' + error.message, 'error');
+            }
+        }
+
+        async function loadBackgroundState() {
+            try {
+                if (!features.background) return;
+                const enabled = await window.EveryAppBridge.background.isEnabled();
+                updateBackgroundUI(enabled);
+            } catch (error) {
+                addLog('Hintergrundstatus konnte nicht geladen werden', 'error');
+            }
+        }
+
+        // ============================================================================
+        // MACRO MANAGEMENT
+        // ============================================================================
+
+        function openMacroModal(macroId = null) {
+            editingMacroId = macroId;
+            const modal = document.getElementById('macroModal');
+            const input = document.getElementById('macroCodeInput');
+            const modeLabel = document.getElementById('modalMode');
+
+            if (macroId) {
+                const macro = macros.find(m => m.id === macroId);
+                if (macro) {
+                    input.value = macro.code;
+                    modeLabel.textContent = 'bearbeiten';
+                }
+            } else {
+                input.value = '';
+                modeLabel.textContent = 'hinzufügen';
+            }
+
+            document.getElementById('validationError').style.display = 'none';
+            modal.classList.add('active');
+        }
+
+        function closeMacroModal() {
+            document.getElementById('macroModal').classList.remove('active');
+            editingMacroId = null;
+        }
+
+        async function saveMacro() {
+            const code = document.getElementById('macroCodeInput').value.trim();
+            
+            if (!code) {
+                showValidationError('Bitte gib Makro-Code ein');
+                return;
+            }
+
+            const validation = validateMacroCode(code);
+            if (!validation.valid) {
+                showValidationError(validation.error);
+                return;
+            }
+
+            const macroData = validation.macro;
+
+            if (editingMacroId) {
+                const index = macros.findIndex(m => m.id === editingMacroId);
+                if (index !== -1) {
+                    stopMacro(editingMacroId);
+                    macros[index] = {
+                        ...macros[index],
+                        ...macroData,
+                        code: code
+                    };
+                    addLog(`Makro "${macroData.name}" aktualisiert`, 'info');
+                }
+            } else {
+                const newMacro = {
+                    id: 'macro_' + Date.now(),
+                    ...macroData,
+                    code: code,
+                    enabled: true,
+                    lastRun: null,
+                    lastError: null,
+                    runCount: 0
+                };
+                macros.push(newMacro);
+                addLog(`Makro "${macroData.name}" erstellt`, 'info');
+            }
+
+            await saveMacros();
+            renderMacros();
+            startActiveMacros();
+            closeMacroModal();
+        }
+
+        function showValidationError(message) {
+            const errorEl = document.getElementById('validationError');
+            errorEl.textContent = message;
+            errorEl.style.display = 'block';
+        }
+
+        function validateMacroCode(code) {
+            try {
+                const macroFunc = new Function('macro', code + '\nreturn __macroData;');
+                let capturedMacro = null;
+                
+                const mockMacro = (data) => {
+                    capturedMacro = data;
+                    return { __macroData: data };
+                };
+
+                macroFunc(mockMacro);
+
+                if (!capturedMacro) {
+                    return { valid: false, error: 'Code muss macro({...}) aufrufen' };
+                }
+
+                if (!capturedMacro.name || typeof capturedMacro.name !== 'string') {
+                    return { valid: false, error: 'Makro muss einen Namen (string) haben' };
+                }
+
+                if (!capturedMacro.triggers || !Array.isArray(capturedMacro.triggers) || capturedMacro.triggers.length === 0) {
+                    return { valid: false, error: 'Makro muss mindestens einen Trigger haben' };
+                }
+
+                if (!capturedMacro.actions || typeof capturedMacro.actions !== 'function') {
+                    return { valid: false, error: 'Makro muss actions als Funktion definieren' };
+                }
+
+                return { valid: true, macro: capturedMacro };
+            } catch (error) {
+                return { valid: false, error: 'Syntax-Fehler: ' + error.message };
+            }
+        }
+
+        async function toggleMacro(macroId) {
+            const macro = macros.find(m => m.id === macroId);
+            if (!macro) return;
+
+            macro.enabled = !macro.enabled;
+            
+            if (!macro.enabled) {
+                stopMacro(macroId);
+                addLog(`Makro "${macro.name}" deaktiviert`, 'info');
+            } else {
+                addLog(`Makro "${macro.name}" aktiviert`, 'info');
+            }
+
+            await saveMacros();
+            renderMacros();
+            startActiveMacros();
+        }
+
+        async function deleteMacro(macroId) {
+            const macro = macros.find(m => m.id === macroId);
+            if (!macro) return;
+
+            if (!confirm(`Makro "${macro.name}" wirklich löschen?`)) return;
+
+            stopMacro(macroId);
+            macros = macros.filter(m => m.id !== macroId);
+            await saveMacros();
+            renderMacros();
+            addLog(`Makro "${macro.name}" gelöscht`, 'info');
+        }
+
+        async function testMacro(macroId) {
+            const macro = macros.find(m => m.id === macroId);
+            if (!macro) return;
+
+            addLog(`Teste Makro "${macro.name}"...`, 'info');
+            await executeMacro(macro, { trigger: 'manual' });
+        }
+
+        function renderMacros() {
+            const list = document.getElementById('macroList');
+            
+            if (macros.length === 0) {
+                list.innerHTML = '<div class="empty-state">Noch keine Makros vorhanden.<br>Erstelle dein erstes Makro mit "Hinzufügen".</div>';
+                return;
+            }
+
+            list.innerHTML = macros.map(macro => {
+                const lastRunText = macro.lastRun 
+                    ? new Date(macro.lastRun).toLocaleString('de-DE') 
+                    : 'Noch nie ausgeführt';
+                
+                const errorHtml = macro.lastError 
+                    ? `<div class="macro-error">❌ ${macro.lastError}</div>`
+                    : '';
+
+                return `
+                    <div class="macro-item">
+                        <div class="macro-header">
+                            <div class="macro-name">${macro.name}</div>
+                            <div class="macro-actions">
+                                <button class="small-btn" onclick="toggleMacro('${macro.id}')">
+                                    ${macro.enabled ? '✓ An' : '○ Aus'}
+                                </button>
+                                <button class="small-btn" onclick="testMacro('${macro.id}')">▶ Testen</button>
+                                <button class="small-btn" onclick="openMacroModal('${macro.id}')">✏️</button>
+                                <button class="small-btn" onclick="deleteMacro('${macro.id}')">🗑️</button>
+                            </div>
+                        </div>
+                        <div class="macro-meta">
+                            Ausführungen: ${macro.runCount} | Letzter Lauf: ${lastRunText}
+                        </div>
+                        ${errorHtml}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // ============================================================================
+        // BACKGROUND MODE
+        // ============================================================================
+
+        async function toggleBackground() {
+            if (!features.background) {
+                alert('Hintergrundmodus wird von dieser EveryApp-Version nicht unterstützt');
+                return;
+            }
+
+            try {
+                const currentState = await window.EveryAppBridge.background.isEnabled();
+                
+                if (currentState) {
+                    // Cannot disable once enabled - just inform user
+                    alert('Hintergrundmodus ist aktiv und kann nicht deaktiviert werden');
+                } else {
+                    await window.EveryAppBridge.background.enable();
+                    updateBackgroundUI(true);
+                    addLog('Hintergrundmodus aktiviert', 'info');
+                }
+            } catch (error) {
+                addLog('Fehler beim Aktivieren des Hintergrundmodus: ' + error.message, 'error');
+            }
+        }
+
+        function updateBackgroundUI(enabled) {
+            const toggle = document.getElementById('backgroundToggle');
+            const status = document.getElementById('backgroundStatus');
+            
+            if (enabled) {
+                toggle.classList.add('active');
+                status.textContent = 'AN';
+            } else {
+                toggle.classList.remove('active');
+                status.textContent = 'AUS';
+            }
+        }
+
+        // ============================================================================
+        // MACRO EXECUTION ENGINE
+        // ============================================================================
+
+        function startActiveMacros() {
+            // Stop all first
+            Object.keys(runningIntervals).forEach(id => stopMacro(id));
+            
+            if (bluetoothListenersActive && features.events) {
+                window.EveryAppBridge.events.off('bluetooth.connected');
+                window.EveryAppBridge.events.off('bluetooth.disconnected');
+                bluetoothListenersActive = false;
+            }
+            
+            if (appStartListenerActive && features.events) {
+                window.EveryAppBridge.events.off('app.start');
+                appStartListenerActive = false;
+            }
+
+            // Start enabled macros
+            const enabledMacros = macros.filter(m => m.enabled);
+            
+            for (const macro of enabledMacros) {
+                try {
+                    const macroObj = parseMacro(macro.code);
+                    
+                    for (const trigger of macroObj.triggers) {
+                        if (trigger.type === 'interval') {
+                            startIntervalTrigger(macro, trigger);
+                        } else if (trigger.type === 'bluetoothConnected' || trigger.type === 'bluetoothDisconnected') {
+                            startBluetoothTrigger(macro, trigger);
+                        } else if (trigger.type === 'appStart') {
+                            startAppStartTrigger(macro, trigger);
+                        }
+                    }
+                } catch (error) {
+                    addLog(`Fehler beim Starten von Makro "${macro.name}": ${error.message}`, 'error');
+                }
+            }
+        }
+
+        function stopMacro(macroId) {
+            if (runningIntervals[macroId]) {
+                runningIntervals[macroId].forEach(interval => clearInterval(interval));
+                delete runningIntervals[macroId];
+            }
+        }
+
+        function parseMacro(code) {
+            const macroFunc = new Function('macro', code + '\nreturn __macroData;');
+            let capturedMacro = null;
+            
+            const mockMacro = (data) => {
+                capturedMacro = data;
+                return { __macroData: data };
+            };
+
+            macroFunc(mockMacro);
+            return capturedMacro;
+        }
+
+        function startIntervalTrigger(macro, trigger) {
+            const interval = setInterval(() => {
+                executeMacro(macro, { trigger: 'interval', interval: trigger.ms });
+            }, trigger.ms);
+
+            if (!runningIntervals[macro.id]) {
+                runningIntervals[macro.id] = [];
+            }
+            runningIntervals[macro.id].push(interval);
+        }
+
+        function startBluetoothTrigger(macro, trigger) {
+            if (!features.events) return;
+
+            const eventName = trigger.type === 'bluetoothConnected' 
+                ? 'bluetooth.connected' 
+                : 'bluetooth.disconnected';
+
+            window.EveryAppBridge.events.on(eventName, (device) => {
+                if (trigger.nameOrAddress) {
+                    if (device.name === trigger.nameOrAddress || device.address === trigger.nameOrAddress) {
+                        executeMacro(macro, { trigger: trigger.type, device });
+                    }
+                } else {
+                    executeMacro(macro, { trigger: trigger.type, device });
+                }
+            });
+
+            bluetoothListenersActive = true;
+        }
+
+        function startAppStartTrigger(macro, trigger) {
+            if (!features.events) return;
+
+            window.EveryAppBridge.events.on('app.start', () => {
+                executeMacro(macro, { trigger: 'appStart' });
+            });
+
+            appStartListenerActive = true;
+        }
+
+        async function executeMacro(macro, context) {
+            try {
+                const macroObj = parseMacro(macro.code);
+                
+                // Check conditions
+                if (macroObj.conditions && Array.isArray(macroObj.conditions)) {
+                    for (const condition of macroObj.conditions) {
+                        const result = await condition(createMacroContext(macro));
+                        if (!result) {
+                            addLog(`Makro "${macro.name}" übersprungen (Bedingung nicht erfüllt)`, 'info');
+                            return;
+                        }
+                    }
+                }
+
+                // Execute actions
+                const ctx = createMacroContext(macro);
+                await macroObj.actions(ctx);
+
+                // Update stats
+                macro.lastRun = Date.now();
+                macro.lastError = null;
+                macro.runCount = (macro.runCount || 0) + 1;
+                await saveMacros();
+                renderMacros();
+
+                addLog(`Makro "${macro.name}" erfolgreich ausgeführt (${context.trigger})`, 'info');
+            } catch (error) {
+                macro.lastError = error.message;
+                await saveMacros();
+                renderMacros();
+                addLog(`Makro "${macro.name}" fehlgeschlagen: ${error.message}`, 'error');
+            }
+        }
+
+        function createMacroContext(macro) {
+            const ctx = {
+                vars: {},
+                log: (message) => addLog(`[${macro.name}] ${message}`, 'info'),
+                wait: (ms) => new Promise(resolve => setTimeout(resolve, ms)),
+            };
+
+            // HTTP
+            if (features.http) {
+                ctx.http = {
+                    request: async (options) => {
+                        const response = await window.EveryAppBridge.http.request(options);
+                        return response;
+                    },
+                    get: async (url) => {
+                        return await ctx.http.request({ url, method: 'GET' });
+                    }
+                };
+            } else {
+                ctx.http = {
+                    request: async () => { throw new Error('HTTP nicht verfügbar'); },
+                    get: async () => { throw new Error('HTTP nicht verfügbar'); }
+                };
+            }
+
+            // Notifications
+            if (features.notifications) {
+                ctx.notify = async (title, body) => {
+                    await window.EveryAppBridge.notifications.schedule(title, body, 0);
+                };
+            } else {
+                ctx.notify = async () => { throw new Error('Benachrichtigungen nicht verfügbar'); };
+            }
+
+            // Vibration
+            if (features.vibration) {
+                ctx.vibrate = (pattern) => {
+                    window.EveryAppBridge.vibration.vibrate(pattern);
+                };
+            } else {
+                ctx.vibrate = () => { throw new Error('Vibration nicht verfügbar'); };
+            }
+
+            // Persistent storage
+            ctx.vars = createVarsProxy(macro.id);
+
+            return ctx;
+        }
+
+        function createVarsProxy(macroId) {
+            const cache = {};
+            
+            return new Proxy({}, {
+                get: (target, prop) => {
+                    if (prop in cache) return cache[prop];
+                    return undefined;
+                },
+                set: (target, prop, value) => {
+                    cache[prop] = value;
+                    saveVars(macroId, cache);
+                    return true;
+                }
+            });
+        }
+
+        async function saveVars(macroId, vars) {
+            try {
+                const key = `macro_vars_${macroId}`;
+                const data = JSON.stringify(vars);
+                
+                if (features.storage) {
+                    await window.EveryAppBridge.storage.set(key, data);
+                } else {
+                    localStorage.setItem(key, data);
+                }
+            } catch (error) {
+                console.error('Failed to save vars:', error);
+            }
+        }
+
+        // ============================================================================
+        // DSL HELPERS (exposed to macro code)
+        // ============================================================================
+
+        function bluetoothConnected(nameOrAddress = null) {
+            return { type: 'bluetoothConnected', nameOrAddress };
+        }
+
+        function bluetoothDisconnected(nameOrAddress = null) {
+            return { type: 'bluetoothDisconnected', nameOrAddress };
+        }
+
+        function appStart() {
+            return { type: 'appStart' };
+        }
+
+        function interval(ms) {
+            return { type: 'interval', ms };
+        }
+
+        function manual() {
+            return { type: 'manual' };
+        }
+
+        // ============================================================================
+        // LOGGING
+        // ============================================================================
+
+        function addLog(message, level = 'info') {
+            const timestamp = new Date().toLocaleTimeString('de-DE');
+            const entry = { message, level, timestamp };
+            globalLog.unshift(entry);
+            
+            if (globalLog.length > 100) {
+                globalLog = globalLog.slice(0, 100);
+            }
+
+            renderLog();
+        }
+
+        function renderLog() {
+            const logView = document.getElementById('logView');
+            const entries = globalLog.slice(0, 5);
+            
+            logView.innerHTML = entries.map(entry => 
+                `<div class="log-entry ${entry.level}">[${entry.timestamp}] ${entry.message}</div>`
+            ).join('');
+        }
+
+        function showFullLog() {
+            const modal = document.getElementById('logModal');
+            const fullLogView = document.getElementById('fullLogView');
+            
+            fullLogView.innerHTML = globalLog.map(entry => 
+                `<div class="log-entry ${entry.level}">[${entry.timestamp}] ${entry.message}</div>`
+            ).join('');
+            
+            modal.classList.add('active');
+        }
+
+        function clearLog() {
+            globalLog = [];
+            renderLog();
+        }
+
+        // Make functions available globally for onclick handlers
+        window.toggleMacro = toggleMacro;
+        window.deleteMacro = deleteMacro;
+        window.testMacro = testMacro;
+        window.openMacroModal = openMacroModal;
+    </script>
+</body>
+</html>
