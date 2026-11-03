@@ -841,7 +841,7 @@
                     let obj;
                     try { obj = parseMacro(macro.code); } catch (e) { continue; }
                     const triggers = (obj.triggers || []).filter(t =>
-                        t.type === 'bluetoothConnected' || t.type === 'bluetoothDisconnected' || t.type === 'interval');
+                        t.type === 'bluetoothConnected' || t.type === 'bluetoothDisconnected' || t.type === 'interval' || t.type === 'quickTile');
                     if (triggers.length === 0) continue;
                     await window.EveryAppBridge.background.registerTask({
                         id: macro.id, name: macro.name, triggers, code: buildTaskCode(macro)
@@ -860,6 +860,7 @@ const __dsl = {
   bluetoothConnected: (n = null) => ({ type: 'bluetoothConnected', nameOrAddress: n }),
   bluetoothDisconnected: (n = null) => ({ type: 'bluetoothDisconnected', nameOrAddress: n }),
   appStart: () => ({ type: 'appStart' }), interval: (ms) => ({ type: 'interval', ms }), manual: () => ({ type: 'manual' }),
+  quickTile: (name) => ({ type: 'quickTile', name }),
 };
 let __m = null;
 new Function('macro', ...Object.keys(__dsl), __code)((d) => { __m = d; }, ...Object.values(__dsl));
@@ -867,8 +868,15 @@ if (!__m) throw new Error('macro({...}) wurde nicht aufgerufen');
 const __varsKey = 'macro_vars_' + ${JSON.stringify(macro.id)};
 let __vars = {};
 try { __vars = JSON.parse((await ctx.storage.get(__varsKey)) || '{}'); } catch (e) {}
-ctx.vars = new Proxy(__vars, { set: (t, p, v) => { t[p] = v; ctx.storage.set(__varsKey, JSON.stringify(t)); return true; } });
+const __px = (key, obj) => new Proxy(obj, {
+  set: (t, p, v) => { t[p] = v; ctx.storage.set(key, JSON.stringify(t)); return true; },
+  deleteProperty: (t, p) => { delete t[p]; ctx.storage.set(key, JSON.stringify(t)); return true; } });
+ctx.vars = __px(__varsKey, __vars);
+let __g = {};
+try { __g = JSON.parse((await ctx.storage.get('macro_globals')) || '{}'); } catch (e) {}
+ctx.globals = __px('macro_globals', __g);
 ctx.device = event.device;
+ctx.trigger = ctx.trigger || { type: event.type, device: event.device, tile: event.tile };
 for (const c of (__m.conditions || [])) { if (!(await c(ctx))) { ctx.log('übersprungen (Bedingung nicht erfüllt)'); return; } }
 await __m.actions(ctx);
 `;
@@ -943,11 +951,16 @@ await __m.actions(ctx);
             try {
                 const macroObj = parseMacro(macro.code);
                 
+                const ctx = createMacroContext(macro);
+                ctx.vars = await loadVarsProxy('macro_vars_' + macro.id);
+                ctx.globals = await loadVarsProxy('macro_globals');
+                ctx.device = context.device;
+                ctx.trigger = { type: context.trigger, device: context.device, tile: context.tile, interval: context.interval };
+
                 // Check conditions
                 if (macroObj.conditions && Array.isArray(macroObj.conditions)) {
                     for (const condition of macroObj.conditions) {
-                        const result = await condition(createMacroContext(macro));
-                        if (!result) {
+                        if (!(await condition(ctx))) {
                             addLog(`Makro "${macro.name}" übersprungen (Bedingung nicht erfüllt)`, 'info');
                             return;
                         }
@@ -955,8 +968,6 @@ await __m.actions(ctx);
                 }
 
                 // Execute actions
-                const ctx = createMacroContext(macro);
-                ctx.device = context.device;
                 await macroObj.actions(ctx);
 
                 // Update stats
@@ -1027,42 +1038,31 @@ await __m.actions(ctx);
             ctx.copy = async (text) => { const err = await copyText(String(text ?? '')); if (err) throw new Error('Kopieren fehlgeschlagen: ' + err); };
 
             // Persistent storage
-            ctx.vars = createVarsProxy(macro.id);
+            ctx.vars = {};   // replaced by executeMacro with the persistent proxy
+            ctx.bluetooth = {
+                getConnectedDevices: async () => {
+                    if (!features.bluetooth) throw new Error('Bluetooth-Bridge nicht verfügbar');
+                    return await window.EveryAppBridge.bluetooth.getConnectedDevices(false) || [];
+                },
+                isConnected: async (x) => (await ctx.bluetooth.getConnectedDevices()).some(d => deviceMatches(x, d)),
+            };
 
             return ctx;
         }
 
-        function createVarsProxy(macroId) {
-            const cache = {};
-            
-            return new Proxy({}, {
-                get: (target, prop) => {
-                    if (prop in cache) return cache[prop];
-                    return undefined;
-                },
-                set: (target, prop, value) => {
-                    cache[prop] = value;
-                    saveVars(macroId, cache);
-                    return true;
-                }
+        // Persistent vars: storage key "<key>" (per macro: macro_vars_<id>, global: macro_globals).
+        // Same keys as the EveryApp background engine -> shared between WebView and background runs.
+        async function storageGet(k) { return features.storage ? await window.EveryAppBridge.storage.get(k) : localStorage.getItem(k); }
+        async function storageSet(k, v) { return features.storage ? await window.EveryAppBridge.storage.set(k, v) : localStorage.setItem(k, v); }
+        async function loadVarsProxy(key) {
+            let data = {};
+            try { data = JSON.parse((await storageGet(key)) || '{}') || {}; } catch (e) { addLog('Vars nicht lesbar (' + key + '): ' + e.message, 'error'); }
+            const save = () => storageSet(key, JSON.stringify(data)).catch(e => addLog('FEHLER Vars speichern: ' + e.message, 'error'));
+            return new Proxy(data, {
+                set: (t, p, v) => { t[p] = v; save(); return true; },
+                deleteProperty: (t, p) => { delete t[p]; save(); return true; },
             });
         }
-
-        async function saveVars(macroId, vars) {
-            try {
-                const key = `macro_vars_${macroId}`;
-                const data = JSON.stringify(vars);
-                
-                if (features.storage) {
-                    await window.EveryAppBridge.storage.set(key, data);
-                } else {
-                    localStorage.setItem(key, data);
-                }
-            } catch (error) {
-                console.error('Failed to save vars:', error);
-            }
-        }
-
 
         // ============================================================================
         // BLUETOOTH-GERÄTE (Info für KI)
@@ -1410,6 +1410,11 @@ await __m.actions(ctx);
 
         function interval(ms) {
             return { type: 'interval', ms };
+        }
+
+        // Quick-Settings-Kachel (Schnelleinstellungen). Läuft über EveryApp-Hintergrund (ab nächstem Build).
+        function quickTile(name) {
+            return { type: 'quickTile', name };
         }
 
         function manual() {

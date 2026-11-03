@@ -578,3 +578,33 @@ SI-Befehle verwenden immer den **internen** Namen: SIDVD, SITV, SISAT/CBL, SIBD,
 ## Media-Steuerung (ab nächstem EveryApp-Build)
 `await ctx.media.play()`, `pause()`, `toggle()`, `next()`, `previous()`, `stop()` – sendet Medientasten an den gerade aktiven Player (wie Kopfhörer-Tasten).
 Vorher wirft das den Fehler „Media-Steuerung braucht nächsten Build“. Welche App gerade spielt, lässt sich nicht abfragen.
+
+## `ctx.trigger`
+`{ type, device?, tile?, interval? }` – `type` ist `bluetoothConnected`, `bluetoothDisconnected`, `quickTile`, `interval`, `boot`, `appStart` oder `manual`.
+```js
+if (ctx.trigger.type === 'manual') ctx.log('Von Hand gestartet');
+```
+
+## `ctx.bluetooth`
+- `await ctx.bluetooth.getConnectedDevices()` → Liste `{name, alias, address, ...}`
+- `await ctx.bluetooth.isConnected("Denon_AmHasen")` → true/false (Name, Alias oder MAC; Groß-/Kleinschreibung egal)
+Mit der aktuellen EveryApp nur eingeschränkt (nur gekoppelte Geräte, kein Alias); ab dem nächsten Build vollständig.
+
+## `ctx.vars` und `ctx.globals` (dauerhaft)
+- `ctx.vars` gehört **zu einem Makro** (Speicher-Schlüssel `macro_vars_<Makro-ID>`). Die Werte bleiben über Ausführungen, App-Neustarts
+  und zwischen Vordergrund (EveryMacro offen) und Hintergrund (EveryApp-Engine) erhalten, weil beide denselben Schlüssel nutzen.
+- `ctx.globals` wird von **allen Makros** geteilt (Schlüssel `macro_globals`), ebenfalls dauerhaft.
+- Nur JSON-fähige Werte (Zahl, Text, Bool, Objekt/Array). Zugewiesene Werte werden sofort gespeichert (`delete ctx.vars.x` löscht).
+- Werden zwei Makros gleichzeitig ausgeführt, kann bei `ctx.globals` die letzte Speicherung gewinnen.
+- Makro löschen oder neu anlegen = neue ID = neue `vars`.
+```js
+ctx.vars.count = (ctx.vars.count || 0) + 1;
+ctx.globals.lastDenonOn = Date.now();
+```
+
+## Quick-Settings-Kachel: `quickTile("Name")` (ab nächstem EveryApp-Build)
+```js
+macro({ name: "Denon an (Kachel)", triggers: [quickTile("Denon an")], actions: async (ctx) => { /* ... */ } });
+```
+Läuft über den EveryApp-Hintergrund (Hintergrundmodus muss an sein). EveryApp hat 5 Kacheln („EveryApp 1“ bis „EveryApp 5“); jeder Name bekommt automatisch eine Kachel,
+die dann diesen Namen trägt. Einmalig in den Schnelleinstellungen über „Bearbeiten“ hinzufügen. Maximal 5 verschiedene Namen.
