@@ -1030,7 +1030,7 @@
 
         // Registers enabled macros as generic EveryApp background tasks (see EveryApp docs/BACKGROUND.md).
         // Bluetooth + interval triggers then run in EveryApp, also when EveryMacro/EveryApp is closed.
-        const BG_TRIGGERS = ['bluetoothConnected', 'bluetoothDisconnected', 'interval', 'quickTile', 'tileMenu', 'widgetAction', 'wifiChanged', 'bleNotify'];
+        const BG_TRIGGERS = ['bluetoothConnected', 'bluetoothDisconnected', 'interval', 'quickTile', 'tileMenu', 'widgetAction', 'wifiChanged', 'bleNotify', 'popup'];
         async function syncBackgroundTasks(enabledMacros) {
             if (!hostHandlesTriggers || typeof window.EveryAppBridge.background.registerTask !== 'function') return;
             try {
@@ -1081,6 +1081,8 @@ const __dsl = {
   wifiChanged: (bssid = null) => ({ type: 'wifiChanged', bssid }),
   bleNotify: (address = null, charUuid = null) => ({ type: 'bleNotify', address, charUuid }),
   tile: (o) => ({ kind: 'tile', ...o }), widget: (o) => ({ kind: 'widget', ...o }),
+  popupEvent: (popupId = null, event = null) => ({ type: 'popup', popupId, event }),
+  popupKit: new Function(${JSON.stringify(POPUP_KIT_SRC)} + '; return popupKit;')(),
 };
 let __m = null;
 new Function('macro', ...Object.keys(__dsl), __code)((d) => { __m = d; }, ...Object.values(__dsl));
@@ -1219,12 +1221,16 @@ await __m.actions(ctx);
             };
             const __bg = () => (window.EveryAppBridge && window.EveryAppBridge.background) || {};
             const __need = (f) => { if (typeof __bg()[f] !== 'function') throw new Error('Kacheln/Widgets: EveryApp zu alt (braucht nächsten Build)'); return __bg()[f]; };
-            ctx.tile = {
+            const __tl = (n) => { const b = window.EveryAppBridge; if (!b || typeof b.tile !== 'function') throw new Error('tile(n).set braucht nächsten Build'); return b.tile(n); };
+            ctx.tile = Object.assign((n) => ({ set: (p) => __tl(n).set(p), get: () => __tl(n).get(), release: () => __tl(n).release() }), {
                 update: (s, p) => __need('tileUpdate')(s, p),
                 setState: (s, st) => __need('tileUpdate')(s, { state: (st === true || st === 'on') ? 'on' : 'off' }),
                 setLabel: (s, l) => __need('tileUpdate')(s, { label: String(l) }),
                 setIcon: (s, i) => __need('tileUpdate')(s, { icon: String(i) }),
-            };
+            });
+            const __pp = (f) => (...a) => { const b = window.EveryAppBridge && window.EveryAppBridge.popup;
+                if (!b || typeof b[f] !== 'function') throw new Error('Popup braucht nächsten Build'); return b[f](...a); };
+            ctx.popup = { open: __pp('open'), send: __pp('send'), close: __pp('close'), state: __pp('state') };
             ctx.widget = { update: (id, p) => __need('widgetUpdate')(id, p) };
             const __ble = (f) => (...a) => { const b = window.EveryAppBridge && window.EveryAppBridge.ble;
                 if (!b || typeof b[f] !== 'function') throw new Error('BLE braucht nächsten Build'); return b[f](...a); };
@@ -1857,6 +1863,10 @@ await __m.actions(ctx);
         // UI-Deklarationen für macro({ ui: [tile({...}), widget({...})] })
         function tile(o) { return { kind: 'tile', ...o }; }
         function widget(o) { return { kind: 'widget', ...o }; }
+        // Popup-Trigger + Komponenten-Bibliothek für EveryApp-Popups (nächster Build)
+        function popupEvent(popupId = null, event = null) { return { type: 'popup', popupId, event }; }
+        const POPUP_KIT_SRC = "function popupKit(spec) {\n  spec = spec || {};\n  var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>\"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;' }[c]; }); };\n  var items = JSON.stringify(spec.items || []).replace(/<\/g, '\\\\u003c');\n  var accent = spec.accent || '#7aa2ff';\n  return '<!doctype html><html><head><meta name=\"viewport\" content=\"width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no\"><style>'\n    + 'html,body{margin:0;background:transparent;color:#fff;font:15px system-ui,sans-serif;-webkit-user-select:none;user-select:none}'\n    + '.wrap{padding:14px 16px 16px}.t{font-size:17px;font-weight:600;margin:0 0 10px}.row{margin:12px 0}'\n    + '.lbl{display:flex;justify-content:space-between;opacity:.85;font-size:13px;margin-bottom:6px}'\n    + 'input[type=range]{width:100%;accent-color:' + accent + ';height:28px}'\n    + '.sw{display:flex;justify-content:space-between;align-items:center}.tg{width:52px;height:30px;border-radius:15px;background:#555;position:relative;transition:.2s}'\n    + '.tg:after{content:\"\";position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:#fff;transition:.2s}.tg.on{background:' + accent + '}.tg.on:after{left:25px}'\n    + '.btns{display:flex;flex-wrap:wrap;gap:8px}.btn{flex:1;min-width:70px;padding:10px;border-radius:12px;background:rgba(255,255,255,.14);text-align:center}.btn:active{background:rgba(255,255,255,.3)}'\n    + '.wheel{position:relative;margin:4px auto;touch-action:none}.wheel canvas{border-radius:50%;display:block}'\n    + '.knob{position:absolute;width:22px;height:22px;margin:-11px 0 0 -11px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 4px #000;pointer-events:none}'\n    + (spec.css || '') + '<\/style><\/head><body><div class=\"wrap\">'\n    + (spec.title ? '<div class=\"t\">' + esc(spec.title) + '<\/div>' : '') + '<div id=\"root\"><\/div><\/div><script>'\n    + '(function(){var P=window.EveryAppPopup||{state:{},send:function(e,v){console.log(\"send\",e,v)},onMessage:function(){},close:function(){}};'\n    + 'var items=' + items + ',st=P.state||{},root=document.getElementById(\"root\"),upd={};'\n    + 'function val(it,d){return st[it.id]!==undefined?st[it.id]:(it.value!==undefined?it.value:d);}'\n    + 'function hsv2rgb(h,s,v){s/=1000;v/=1000;var f=function(n){var k=(n+h/60)%6;return Math.round(255*(v-v*s*Math.max(0,Math.min(k,4-k,1))));};return \"rgb(\"+f(5)+\",\"+f(3)+\",\"+f(1)+\")\";}'\n    + 'function send(id,v){st[id]=v;P.send(id,v);}'\n    + 'items.forEach(function(it){var r=document.createElement(\"div\");r.className=\"row\";root.appendChild(r);'\n    + 'if(it.type===\"slider\"){var mn=it.min!=null?it.min:0,mx=it.max!=null?it.max:100;r.innerHTML=\"<div class=lbl><span><\/span><b><\/b><\/div><input type=range>\";'\n    + 'var i=r.querySelector(\"input\"),b=r.querySelector(\"b\");r.querySelector(\"span\").textContent=it.label||it.id;i.min=mn;i.max=mx;i.step=it.step||1;'\n    + 'var set=function(v){i.value=v;b.textContent=v+(it.unit||\"\");};set(val(it,mn));i.oninput=function(){b.textContent=i.value+(it.unit||\"\");send(it.id,Number(i.value));};upd[it.id]=set;}'\n    + 'else if(it.type===\"toggle\"){r.className=\"row sw\";r.innerHTML=\"<span><\/span><div class=tg><\/div>\";r.querySelector(\"span\").textContent=it.label||it.id;var g=r.querySelector(\".tg\");'\n    + 'var setT=function(v){g.classList.toggle(\"on\",!!v);};setT(val(it,false));g.onclick=function(){var v=!g.classList.contains(\"on\");setT(v);send(it.id,v);};upd[it.id]=setT;}'\n    + 'else if(it.type===\"buttons\"){r.className=\"row btns\";(it.items||[]).forEach(function(x){var d=document.createElement(\"div\");d.className=\"btn\";d.textContent=x.label||x.id;'\n    + 'd.onclick=function(){P.send(x.id,x.value!==undefined?x.value:true);if(x.close)P.close();};r.appendChild(d);});}'\n    + 'else if(it.type===\"colorWheel\"){var sz=it.size||220,w=document.createElement(\"div\");w.className=\"wheel\";w.style.width=w.style.height=sz+\"px\";'\n    + 'var c=document.createElement(\"canvas\"),k=document.createElement(\"div\");k.className=\"knob\";c.width=c.height=sz*2;c.style.width=c.style.height=sz+\"px\";w.appendChild(c);w.appendChild(k);r.appendChild(w);'\n    + 'var g2=c.getContext(\"2d\"),R=sz;for(var a=0;a<360;a+=1){var gr=g2.createLinearGradient(R,R,R+R*Math.cos(a*Math.PI/180),R+R*Math.sin(a*Math.PI/180));'\n    + 'gr.addColorStop(0,\"#fff\");gr.addColorStop(1,\"hsl(\"+a+\",100%,50%)\");g2.fillStyle=gr;g2.beginPath();g2.moveTo(R,R);g2.arc(R,R,R,(a-1)*Math.PI/180,(a+1)*Math.PI/180);g2.fill();}'\n    + 'var cur=Object.assign({h:0,s:1000,v:1000},val(it,{}));var place=function(o){cur=Object.assign(cur,o||{});var rr=cur.s/1000*sz/2,an=cur.h*Math.PI/180;'\n    + 'k.style.left=(sz/2+rr*Math.cos(an))+\"px\";k.style.top=(sz/2+rr*Math.sin(an))+\"px\";k.style.background=hsv2rgb(cur.h,cur.s,1000);};place();upd[it.id]=place;'\n    + 'var pick=function(e){var b=c.getBoundingClientRect(),x=e.clientX-b.left-sz/2,y=e.clientY-b.top-sz/2,h=(Math.atan2(y,x)*180/Math.PI+360)%360,s=Math.min(1,Math.sqrt(x*x+y*y)/(sz/2));'\n    + 'place({h:Math.round(h),s:Math.round(s*1000)});send(it.id,{h:cur.h,s:cur.s,v:cur.v});};'\n    + 'c.addEventListener(\"pointerdown\",function(e){c.setPointerCapture(e.pointerId);pick(e);});c.addEventListener(\"pointermove\",function(e){if(e.buttons)pick(e);});}'\n    + 'else if(it.type===\"html\"){r.innerHTML=it.html||\"\";}});'\n    + 'P.onMessage(function(d){for(var id in d){if(upd[id])upd[id](d[id]);}});'\n    + '})();<\/script><\/body><\/html>';\n}\n";
+        const popupKit = new Function(POPUP_KIT_SRC + '; return popupKit;')();
 
         // ============================================================================
         // LOGGING

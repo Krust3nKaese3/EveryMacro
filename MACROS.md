@@ -821,3 +821,84 @@ macro({ id: "deckenlampe-an", name: "Deckenlampe an", triggers: [manual()], run:
 Vor dem Speichern: Dialog „Makro X wird aktualisiert“ bzw. „… wird neu angelegt“ (OK/Abbrechen).
 Beim Aktualisieren bleiben gespeicherte Secrets und `ctx.vars` erhalten (interne ID ändert sich nicht), ebenso aktiviert/deaktiviert und Ausführungszähler.
 Fehler (HTTP-Status, kein https, ungültiges Makro) erscheinen in einer roten Box mit **📋 Fehler kopieren**.
+
+## 🪟 Popups (Overlay-Fenster) – braucht nächsten Build, Permission `popup`
+
+Ein Popup ist ein frei gestaltbares Overlay-Fenster mit eigenem HTML/JS. Öffnet sich per Quick-Tile, Widget-Knopf
+oder `ctx.popup.open()` (nur wenn EveryApp im Vordergrund ist).
+
+**Spec:** `{ id, html | url (nur https), title?, state?: {…}, throttleMs?: 300, style?: {…} }`
+
+| style | Werte | Standard |
+|---|---|---|
+| `width`, `height` | dp-Zahl, `"80%"`, `"auto"` (Höhe passt sich dem Inhalt an; Breite auto = 92 %) | 92 % × 420 dp |
+| `position` | `center` · `bottom` (Sheet) · `top` | `center` |
+| `margin` | dp | 16 |
+| `background` | `#RRGGBB`, `#AARRGGBB`, `rgba(r,g,b,a)` | `#F21E2A44` |
+| `backgroundAlpha` | 0..1 (überschreibt Alpha) | – |
+| `scrim`, `scrimAlpha` | Farbe hinter dem Fenster, 0..1 | `#000`, 0.4 |
+| `blur` | dp, Hintergrund-Blur (Android 12+, sonst ignoriert) | 0 |
+| `cornerRadius`, `borderWidth`, `borderColor`, `elevation` | dp / Farbe | 22, 0, –, 12 |
+| `animation` | `fade` · `slide` · `scale` · `none` | `fade` |
+| `dismissOnOutsideTap` | bool | true |
+
+**Binden:** `tile({ label, icon, popup: spec })` oder Widget-Knopf `{ type: "button", id, label, popup: spec }`.
+
+**Im Popup-HTML:** `EveryAppPopup.send(event, value)`, `EveryAppPopup.state` (zuletzt gespeicherter Zustand),
+`EveryAppPopup.onMessage(d => …)`, `EveryAppPopup.close()`, `EveryAppPopup.resize()`.
+
+**Im Makro:** Trigger `popupEvent(popupId?, event?)` → `ctx.trigger = { type: "popup", popupId, event, value }`
+(pro Event gedrosselt, Standard 300 ms; beim Schließen `event: "close"`).
+Zurück ans Popup: `ctx.popup.send(popupId, { key: value })` (wird gespeichert und live angezeigt), `ctx.popup.close(id)`, `ctx.popup.state(id)`.
+
+**Komponenten-Bibliothek `popupKit({ title?, accent?, css?, items })`** liefert fertiges HTML:
+- `{ type: "colorWheel", id, size?: 220 }` → Wert `{h: 0–360, s: 0–1000, v}` (Tuya colour_data_v2-Skala)
+- `{ type: "slider", id, label?, min?, max?, step?, unit? }` → Zahl
+- `{ type: "toggle", id, label? }` → true/false
+- `{ type: "buttons", items: [{ id, label, value?, close? }] }` → `value` (Standard true)
+- `{ type: "html", html }` → eigenes Markup
+Startwerte: `value` am Item oder `state: { id: wert }` in der Spec; `ctx.popup.send(popupId, { id: wert })` aktualisiert live.
+
+### Beispiel „Licht“ (Tuya, lokal)
+Tuya-DPs (typisch, v2): `20` an/aus, `21` Modus `"white"|"colour"`, `22` bright_value_v2 (10–1000),
+`23` temp_value_v2 (0–1000), `24` colour_data_v2 = JSON `{"h":0–360,"s":0–1000,"v":0–1000}` (bei 3.3 oft als Hex-String – siehe Gerät).
+```js
+macro({
+  id: "licht-popup", name: "Licht",
+  secrets: [{ key: "tuyaKey", label: "Tuya localKey" }],
+  ui: [tile({ label: "Licht", icon: "lightbulb", popup: {
+    id: "licht",
+    html: popupKit({ title: "Deckenlampe", items: [
+      { type: "toggle", id: "on", label: "An" },
+      { type: "colorWheel", id: "color" },
+      { type: "slider", id: "bright", label: "Helligkeit", min: 10, max: 1000, step: 10 },
+      { type: "slider", id: "ct", label: "Farbtemperatur", min: 0, max: 1000, step: 10 },
+      { type: "buttons", items: [{ id: "white", label: "Weiß" }, { id: "off", label: "Aus", close: true }] },
+    ] }),
+    style: { position: "bottom", height: "auto", animation: "slide", cornerRadius: 28, blur: 20, scrimAlpha: 0.3 },
+  } })],
+  triggers: [popupEvent("licht")],
+  run: async (ctx) => {
+    const lamp = ctx.tuyaLocal({ id: "bf1234567890abcdef", localKey: ctx.secrets.tuyaKey, version: "3.4" });
+    const { event, value } = ctx.trigger;
+    if (event === "on") await lamp.set({ "20": value });
+    if (event === "off") await lamp.set({ "20": false });
+    if (event === "bright") await lamp.set({ "21": "white", "22": value });
+    if (event === "ct") await lamp.set({ "21": "white", "23": value });
+    if (event === "white") await lamp.set({ "20": true, "21": "white" });
+    if (event === "color") await lamp.set({ "20": true, "21": "colour", "24": JSON.stringify({ h: value.h, s: value.s, v: ctx.vars.v || 1000 }) });
+    if (event === "bright") ctx.vars.v = value;
+    if (event !== "close") await ctx.tile(1).set({ state: event === "off" || value === false ? "inactive" : "active" });
+  },
+});
+```
+
+## 🟦 Kacheln zur Laufzeit ändern – `ctx.tile(n)` (braucht nächsten Build, Permission `tiles`)
+`await ctx.tile(1).set({ icon, label, subtitle, state })`, `await ctx.tile(1).get()`, `await ctx.tile(1).release()` – n = 1..5.
+- `state`: `"active"` · `"inactive"` · `"unavailable"` (auch `"on"/"off"`/true/false)
+- `subtitle`: Android 10+ (älter: ignoriert)
+- `icon`: Name (`lightbulb, power, bolt, tv, wifi, music, play, pause, home, lock, star, heart, car, speaker, …`; Material-Aliase wie `power_settings_new`, `play_arrow`),
+  Pfad im Mini-App-Repo (`icons/lamp.png`), `https://…png`, `data:image/png;base64,…` oder SVG (`<svg…>`/`.svg`, nur im Vordergrund – im Hintergrund PNG/Name nutzen).
+  Das Bild wird zur weißen Maske; Android färbt es selbst ein.
+- Eine Kachel gehört der Mini-App, die sie belegt; andere Mini-Apps bekommen einen Fehler. Bleibt nach Neustart erhalten.
+- Alt weiterhin: `ctx.tile.setState(slotOderName, "on")` usw.
