@@ -360,6 +360,18 @@
 
         <div class="section">
             <div class="section-title">
+                <span>BLE-Info</span>
+                <button class="small-btn" id="bleScanBtn">Scannen</button>
+            </div>
+            <div style="font-size:13px">Namensfilter: <input id="bleFilter" style="width:120px" placeholder="z.B. ELK"></div>
+            <div id="bleList" style="font-size:13px;margin-top:6px">Tippe auf „Scannen“ (MeRGBW-App vorher schließen – BLE-Geräte erlauben meist nur eine Verbindung).</div>
+            <div id="bleDump" style="font-size:12px;white-space:pre-wrap;margin-top:6px;max-height:300px;overflow-y:auto"></div>
+            <button class="small-btn" id="bleCopyBtn" style="margin-top:8px">📋 Für KI kopieren</button>
+            <textarea id="bleCopyFallback" readonly style="display:none;width:100%;height:160px;margin-top:8px;font-size:12px"></textarea>
+        </div>
+
+        <div class="section">
+            <div class="section-title">
                 <span>Makros</span>
                 <button class="small-btn" id="addMacroBtn">+ Hinzufügen</button>
             </div>
@@ -832,7 +844,7 @@
 
         // Registers enabled macros as generic EveryApp background tasks (see EveryApp docs/BACKGROUND.md).
         // Bluetooth + interval triggers then run in EveryApp, also when EveryMacro/EveryApp is closed.
-        const BG_TRIGGERS = ['bluetoothConnected', 'bluetoothDisconnected', 'interval', 'quickTile', 'tileMenu', 'widgetAction', 'wifiChanged'];
+        const BG_TRIGGERS = ['bluetoothConnected', 'bluetoothDisconnected', 'interval', 'quickTile', 'tileMenu', 'widgetAction', 'wifiChanged', 'bleNotify'];
         async function syncBackgroundTasks(enabledMacros) {
             if (!hostHandlesTriggers || typeof window.EveryAppBridge.background.registerTask !== 'function') return;
             try {
@@ -881,6 +893,7 @@ const __dsl = {
   quickTile: (name) => ({ type: 'quickTile', name }),
   tileMenu: (id = null) => ({ type: 'tileMenu', id }), widgetAction: (id = null) => ({ type: 'widgetAction', id }),
   wifiChanged: (bssid = null) => ({ type: 'wifiChanged', bssid }),
+  bleNotify: (address = null, charUuid = null) => ({ type: 'bleNotify', address, charUuid }),
   tile: (o) => ({ kind: 'tile', ...o }), widget: (o) => ({ kind: 'widget', ...o }),
 };
 let __m = null;
@@ -1022,6 +1035,10 @@ await __m.actions(ctx);
                 setIcon: (s, i) => __need('tileUpdate')(s, { icon: String(i) }),
             };
             ctx.widget = { update: (id, p) => __need('widgetUpdate')(id, p) };
+            const __ble = (f) => (...a) => { const b = window.EveryAppBridge && window.EveryAppBridge.ble;
+                if (!b || typeof b[f] !== 'function') throw new Error('BLE braucht nächsten Build'); return b[f](...a); };
+            ctx.ble = { scan: __ble('scan'), connect: __ble('connect'), disconnect: __ble('disconnect'),
+                write: __ble('write'), read: __ble('read'), notify: __ble('notify') };
             ctx.wifi = { info: async () => {
                 const n = window.EveryAppBridge && window.EveryAppBridge.network;
                 if (!n || typeof n.getWifi !== 'function') return { ssid: null, bssid: null, error: 'WLAN-Info braucht nächsten Build' };
@@ -1425,6 +1442,68 @@ await __m.actions(ctx);
             else { ta.value = text; ta.style.display = 'block'; ta.select(); showToast('FEHLER beim Kopieren: ' + err, true); addLog('FEHLER beim Kopieren: ' + err, 'error'); }
         }
 
+        // ---------------- BLE-Info ----------------
+        const ble = { devices: [], dump: null, errors: [] };
+        const bleApi = () => { const b = window.EveryAppBridge && window.EveryAppBridge.ble;
+            if (!b || typeof b.scan !== 'function') throw new Error('BLE braucht nächsten Build (EveryApp zu alt)'); return b; };
+        function escHtml(t) { return String(t ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+        async function bleScan() {
+            const list = document.getElementById('bleList');
+            list.textContent = 'Scanne 5 s…'; ble.errors = [];
+            try {
+                const f = document.getElementById('bleFilter').value.trim();
+                ble.devices = await bleApi().scan({ durationMs: 5000, namePrefix: f || undefined });
+            } catch (e) { ble.errors.push(e.message); list.textContent = 'FEHLER: ' + e.message; throw e; }
+            if (!ble.devices.length) { list.textContent = 'Keine BLE-Geräte gefunden.'; return; }
+            list.innerHTML = ble.devices.map((d, i) => `<div data-i="${i}" class="ble-dev" style="padding:6px;border-bottom:1px solid #8884;cursor:pointer">` +
+                `<b>${escHtml(d.name || '(ohne Namen)')}</b> ${escHtml(d.address)} ${d.rssi} dBm` +
+                (d.serviceUuids && d.serviceUuids.length ? `<br><small>${escHtml(d.serviceUuids.join(', '))}</small>` : '') + ` <small>→ tippen zum Verbinden</small></div>`).join('');
+            list.querySelectorAll('.ble-dev').forEach(el => el.addEventListener('click', () => bleConnect(ble.devices[+el.dataset.i]).catch(e => {
+                ble.errors.push(e.message); showToast('FEHLER BLE: ' + e.message, true); addLog('FEHLER BLE: ' + e.message, 'error'); })));
+        }
+        async function bleConnect(d) {
+            const out = document.getElementById('bleDump');
+            out.textContent = `Verbinde ${d.address}…`;
+            try {
+                const r = await bleApi().connect(d.address, { timeoutMs: 12000 });
+                ble.dump = { device: d, ...r };
+                for (const s of r.services || []) for (const c of s.characteristics || []) {
+                    if ((c.properties || []).includes('read')) {
+                        try { c.readHex = (await bleApi().read(d.address, s.uuid, c.uuid)).hex; } catch (e) { c.readHex = 'FEHLER ' + e.message; }
+                    }
+                }
+                out.textContent = bleDumpText(ble.dump);
+            } catch (e) { out.textContent = 'FEHLER: ' + e.message; throw e; }
+        }
+        function bleDumpText(x) {
+            const L = [`Gerät: ${x.device.name || '(ohne Namen)'}  ${x.address}  ${x.device.rssi} dBm`];
+            if (x.device.manufacturerData) L.push('Herstellerdaten: ' + JSON.stringify(x.device.manufacturerData));
+            for (const s of x.services || []) {
+                L.push(`Service ${s.uuid}`);
+                for (const c of s.characteristics || []) L.push(`  Char ${c.uuid}  [${(c.properties || []).join(', ')}]` + (c.readHex !== undefined ? `  Wert: ${c.readHex}` : ''));
+            }
+            return L.join('\n');
+        }
+        function bleInfoText() {
+            const L = ['BLE-Info (EveryMacro, ' + new Date().toLocaleString('de-DE') + ')', ''];
+            if (ble.errors.length) L.push('FEHLER: ' + ble.errors.join(' | '), '');
+            L.push('Gefundene Geräte:');
+            ble.devices.forEach(d => L.push(`  ${d.name || '(ohne Namen)'}  ${d.address}  ${d.rssi} dBm  Services: ${(d.serviceUuids || []).join(', ') || '-'}` + (d.manufacturerData ? '  MFR: ' + JSON.stringify(d.manufacturerData) : '')));
+            if (ble.dump) L.push('', 'GATT-Dump:', bleDumpText(ble.dump));
+            L.push('', 'Hinweis für die KI (EveryMacro, siehe MACROS.md „BLE“):',
+                '- Schreiben: await ctx.ble.write(addr, serviceUuid, charUuid, [0x7e, ...] oder "7e0405...", { withResponse: false })',
+                '- Lesen: (await ctx.ble.read(addr, svc, chr)).hex ; Benachrichtigungen: await ctx.ble.notify(addr, svc, chr, true) + Trigger bleNotify(addr, charUuid), Wert in ctx.trigger.hex / ctx.trigger.bytes',
+                '- Das Protokoll der LED-Leiste (MeRGBW-App) ist unbekannt: aus Android-HCI-Snoop-Log (Wireshark, Filter btatt) ableiten.');
+            return L.join('\n');
+        }
+        async function copyBleInfo() {
+            const text = bleInfoText();
+            const ta = document.getElementById('bleCopyFallback');
+            const err = await copyText(text);
+            if (!err) { ta.style.display = 'none'; showToast('Kopiert ✓'); addLog('BLE-Info kopiert', 'info'); }
+            else { ta.value = text; ta.style.display = 'block'; ta.select(); showToast('FEHLER beim Kopieren: ' + err, true); }
+        }
+
         async function initNetSection() {
             try {
                 const v = features.storage ? await window.EveryAppBridge.storage.get('net_device_ip') : localStorage.getItem('net_device_ip');
@@ -1435,6 +1514,8 @@ await __m.actions(ctx);
             document.getElementById('netScanBtn').addEventListener('click', wrap(scanNet, 'Netz-Scan'));
             document.getElementById('devQueryBtn').addEventListener('click', wrap(queryDevice, 'Geräteabfrage'));
             document.getElementById('netCopyBtn').addEventListener('click', wrap(copyNetInfo, 'Kopieren'));
+            document.getElementById('bleScanBtn').addEventListener('click', wrap(bleScan, 'BLE-Scan'));
+            document.getElementById('bleCopyBtn').addEventListener('click', wrap(copyBleInfo, 'Kopieren'));
         }
 
         // ============================================================================
@@ -1470,6 +1551,7 @@ await __m.actions(ctx);
         function tileMenu(id = null) { return { type: 'tileMenu', id }; }
         function widgetAction(id = null) { return { type: 'widgetAction', id }; }
         function wifiChanged(bssid = null) { return { type: 'wifiChanged', bssid }; }
+        function bleNotify(address = null, charUuid = null) { return { type: 'bleNotify', address, charUuid }; }
         // UI-Deklarationen für macro({ ui: [tile({...}), widget({...})] })
         function tile(o) { return { kind: 'tile', ...o }; }
         function widget(o) { return { kind: 'widget', ...o }; }

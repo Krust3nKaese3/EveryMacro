@@ -677,3 +677,52 @@ macro({
   }],
 });
 ```
+
+## BLE (Bluetooth Low Energy, GATT), z.B. LED-Leiste (braucht nächsten Build)
+
+Auf der aktuellen APK wirft jede `ctx.ble.*`-Funktion den Fehler „BLE braucht nächsten Build“.
+
+- `await ctx.ble.scan({ durationMs: 4000, namePrefix: 'ELK' })` liefert `[{ address, name, rssi, serviceUuids, manufacturerData }]`.
+- `await ctx.ble.connect(addr, { timeoutMs: 10000 })` liefert `{ address, name, services: [{ uuid, characteristics: [{ uuid, properties: ['read','write','writeWithoutResponse','notify','indicate'] }] }] }`. Eine bestehende Verbindung wird wiederverwendet.
+- `await ctx.ble.write(addr, serviceUuid, charUuid, bytes, { withResponse })`:
+  - `bytes` kann ein Array `[0x7e, 0x04, …]` oder ein Hex-String `"7e0404…"` sein.
+  - Ohne Angabe von `withResponse` wird „mit Antwort“ benutzt, wenn die Characteristic das kann.
+  - UUIDs gehen auch kurz (`'ffe0'`, `'ffe1'`).
+  - `write`, `read` und `notify` verbinden automatisch, falls nötig.
+- `await ctx.ble.read(addr, svc, chr)` liefert `{ hex, bytes }`.
+- `await ctx.ble.notify(addr, svc, chr, true)` schaltet Benachrichtigungen ein. Der Trigger `bleNotify(addr?, charUuid?)` liefert dann `ctx.trigger.hex`, `ctx.trigger.bytes` (gleich `ctx.trigger.value`), `address`, `serviceUuid` und `charUuid`.
+- `await ctx.ble.disconnect(addr)` trennt die Verbindung.
+- **Berechtigung**: „Geräte in der Nähe“ (BLUETOOTH_SCAN + BLUETOOTH_CONNECT). Der Standort wird dafür nicht gebraucht. Android fragt beim ersten Scan in EveryMacro → **BLE-Info**. Hintergrund-Makros fragen nicht nach, sondern melden einen Fehler, wenn die Berechtigung fehlt.
+- **BLE-Info**: Scannen, auf ein Gerät tippen, dann siehst du alle Services, Characteristics, Eigenschaften und lesbaren Werte. Mit „Für KI kopieren“ kopierst du das Ergebnis.
+- Die meisten LED-Controller erlauben **nur eine Verbindung**. Die MeRGBW-App muss also geschlossen bzw. getrennt sein.
+
+### LED-Leiste (MeRGBW): Protokoll herausfinden
+Das Byte-Protokoll der MeRGBW-App ist nicht dokumentiert und muss mitgeschnitten werden:
+1. Entwickleroptionen → „Bluetooth-HCI-Snoop-Log aktivieren“ einschalten, dann Bluetooth aus und wieder an.
+2. In MeRGBW ein paar Aktionen machen: an, aus, rot, grün, Helligkeit.
+3. Den Log holen: `adb bugreport bugreport.zip` (darin liegt `btsnoop_hci.log`). Den Log in Wireshark öffnen und mit `btatt.opcode == 0x52 || btatt.opcode == 0x12` filtern, das sind die Write Commands und Write Requests.
+4. Service- und Char-UUIDs sowie die Bytes notieren und hier eintragen. Am einfachsten gibst du der KI zusätzlich den BLE-Info-Dump.
+
+```js
+// Platzhalter! UUIDs und Bytes aus BLE-Info + HCI-Snoop-Log ersetzen.
+const LED = { addr: 'AA:BB:CC:DD:EE:FF', svc: 'ffe0', chr: 'ffe1' };
+macro({
+  name: 'LED rot',
+  ui: [tile({ slot: 2, icon: 'lightbulb', label: 'LED', menu: [
+    { type: 'button', id: 'on', icon: 'lightbulb', label: 'An' },
+    { type: 'button', id: 'off', icon: 'close', label: 'Aus' },
+    { type: 'button', id: 'red', icon: 'circle', label: 'Rot' },
+    { type: 'slider', id: 'bri', label: 'Helligkeit', min: 0, max: 100, step: 5, value: 80 },
+  ] })],
+  triggers: [tileMenu()],
+  actions: [async (ctx) => {
+    const w = (bytes) => ctx.ble.write(LED.addr, LED.svc, LED.chr, bytes, { withResponse: false });
+    const { id, value } = ctx.trigger;
+    if (id === 'on')  await w('7e0404f00001ff00ef');        // Beispiel-Bytes (ELK-BLEDOM-Stil), NICHT MeRGBW-verifiziert
+    if (id === 'off') await w('7e0404000000ff00ef');
+    if (id === 'red') await w([0x7e, 0x07, 0x05, 0x03, 0xff, 0x00, 0x00, 0x10, 0xef]);
+    if (id === 'bri') await w([0x7e, 0x04, 0x01, Math.round(value), 0xff, 0x00, 0x00, 0x00, 0xef]);
+    await ctx.tile.setState(2, id === 'off' ? 'off' : 'on');
+  }],
+});
+```
