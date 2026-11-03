@@ -407,6 +407,8 @@
         </div>
     </div>
 
+    <div id="emVersion" style="text-align:center;font-size:11px;opacity:.6;padding:12px 0 24px"></div>
+
     <!-- Secrets Modal -->
     <div class="modal" id="secretsModal">
         <div class="modal-content">
@@ -443,6 +445,7 @@
         let hostHandlesTriggers = false;
         let backgroundEnabled = false;
         let appStartListenerActive = false;
+        const EM_VERSION = 'EveryMacro v2026-11-03b (Secrets)';
         let editingMacroId = null;
         let secretValues = [];   // known secret values, only used to mask the log
         let secretsModalMacroId = null;
@@ -469,6 +472,7 @@
         init();
 
         async function init() {
+            document.getElementById('emVersion').textContent = EM_VERSION + ' · Secrets-Bridge: ' + ((window.EveryAppBridge && window.EveryAppBridge.secrets) ? 'ja' : 'nein (Fallback)');
             checkBridge();
             await loadMacros();
             initSecrets().catch(e => addLog("FEHLER Secrets laden: " + e.message, "error"));
@@ -642,7 +646,14 @@
             const savedId = editingMacroId || macros[macros.length - 1].id;
             closeMacroModal();
             const saved = macros.find(m => m.id === savedId);
-            if (saved && (await missingSecrets(saved)).length) openSecretsModal(savedId);
+            try {
+                const decl = saved ? declaredSecrets(saved) : [];
+                const miss = saved ? await missingSecrets(saved) : [];
+                addLog(`Secrets: ${decl.length} deklariert, ${miss.length} fehlen${miss.length ? ' (' + miss.join(', ') + ') → Dialog' : ''} [Bridge: ${hasHostSecrets() ? 'EveryApp secrets' : 'Fallback storage'}]`, 'info');
+                if (miss.length) await openSecretsModal(savedId);
+            } catch (e) {
+                addLog('FEHLER Secrets-Dialog: ' + e.message + ' | ' + EM_VERSION, 'error');
+            }
         }
 
         function showValidationError(message) {
