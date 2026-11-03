@@ -832,21 +832,39 @@
 
         // Registers enabled macros as generic EveryApp background tasks (see EveryApp docs/BACKGROUND.md).
         // Bluetooth + interval triggers then run in EveryApp, also when EveryMacro/EveryApp is closed.
+        const BG_TRIGGERS = ['bluetoothConnected', 'bluetoothDisconnected', 'interval', 'quickTile', 'tileMenu', 'widgetAction', 'wifiChanged'];
         async function syncBackgroundTasks(enabledMacros) {
             if (!hostHandlesTriggers || typeof window.EveryAppBridge.background.registerTask !== 'function') return;
             try {
                 await window.EveryAppBridge.background.unregisterAll();
-                if (!backgroundEnabled) return;
+                const ui = { tiles: [], widgets: [] };
+                const pushUi = async () => {
+                    if (typeof window.EveryAppBridge.background.setUi !== 'function') {
+                        if (ui.tiles.length || ui.widgets.length) addLog('Kacheln/Widgets: EveryApp zu alt (braucht nächsten Build)', 'error');
+                        return;
+                    }
+                    try {
+                        const r = await window.EveryAppBridge.background.setUi(ui);
+                        (r && r.errors || []).forEach(e => addLog('FEHLER UI: ' + e, 'error'));
+                        if (r && !r.native && (ui.tiles.length || ui.widgets.length)) addLog('Kacheln/Widgets gespeichert – Anzeige braucht nächsten Build', 'info');
+                    } catch (e) { addLog('FEHLER Kacheln/Widgets: ' + e.message, 'error'); }
+                };
+                if (!backgroundEnabled) { await pushUi(); return; }
                 for (const macro of enabledMacros) {
                     let obj;
                     try { obj = parseMacro(macro.code); } catch (e) { continue; }
-                    const triggers = (obj.triggers || []).filter(t =>
-                        t.type === 'bluetoothConnected' || t.type === 'bluetoothDisconnected' || t.type === 'interval' || t.type === 'quickTile');
+                    if (!obj) continue;
+                    for (const u of [...(obj.ui || []), ...(obj.triggers || [])]) {
+                        if (u && u.kind === 'tile') ui.tiles.push({ ...u, kind: undefined });
+                        if (u && u.kind === 'widget') ui.widgets.push({ ...u, kind: undefined });
+                    }
+                    const triggers = (obj.triggers || []).filter(t => t && !t.kind && BG_TRIGGERS.includes(t.type));
                     if (triggers.length === 0) continue;
                     await window.EveryAppBridge.background.registerTask({
                         id: macro.id, name: macro.name, triggers, code: buildTaskCode(macro)
                     });
                 }
+                await pushUi();
                 addLog('Hintergrund-Tasks in EveryApp registriert', 'info');
             } catch (e) {
                 addLog('FEHLER beim Registrieren der Hintergrund-Tasks: ' + e.message, 'error');
@@ -861,6 +879,9 @@ const __dsl = {
   bluetoothDisconnected: (n = null) => ({ type: 'bluetoothDisconnected', nameOrAddress: n }),
   appStart: () => ({ type: 'appStart' }), interval: (ms) => ({ type: 'interval', ms }), manual: () => ({ type: 'manual' }),
   quickTile: (name) => ({ type: 'quickTile', name }),
+  tileMenu: (id = null) => ({ type: 'tileMenu', id }), widgetAction: (id = null) => ({ type: 'widgetAction', id }),
+  wifiChanged: (bssid = null) => ({ type: 'wifiChanged', bssid }),
+  tile: (o) => ({ kind: 'tile', ...o }), widget: (o) => ({ kind: 'widget', ...o }),
 };
 let __m = null;
 new Function('macro', ...Object.keys(__dsl), __code)((d) => { __m = d; }, ...Object.values(__dsl));
@@ -992,6 +1013,20 @@ await __m.actions(ctx);
                 log: (message) => addLog(`[${macro.name}] ${message}`, 'info'),
                 wait: (ms) => new Promise(resolve => setTimeout(resolve, ms)),
             };
+            const __bg = () => (window.EveryAppBridge && window.EveryAppBridge.background) || {};
+            const __need = (f) => { if (typeof __bg()[f] !== 'function') throw new Error('Kacheln/Widgets: EveryApp zu alt (braucht nächsten Build)'); return __bg()[f]; };
+            ctx.tile = {
+                update: (s, p) => __need('tileUpdate')(s, p),
+                setState: (s, st) => __need('tileUpdate')(s, { state: (st === true || st === 'on') ? 'on' : 'off' }),
+                setLabel: (s, l) => __need('tileUpdate')(s, { label: String(l) }),
+                setIcon: (s, i) => __need('tileUpdate')(s, { icon: String(i) }),
+            };
+            ctx.widget = { update: (id, p) => __need('widgetUpdate')(id, p) };
+            ctx.wifi = { info: async () => {
+                const n = window.EveryAppBridge && window.EveryAppBridge.network;
+                if (!n || typeof n.getWifi !== 'function') return { ssid: null, bssid: null, error: 'WLAN-Info braucht nächsten Build' };
+                return await n.getWifi();
+            } };
 
             // HTTP
             if (features.http) {
@@ -1220,7 +1255,17 @@ await __m.actions(ctx);
                     const i = await br.network.getInfo();
                     net.source = 'nativ'; net.ownIp = i.ip || '?'; net.gateway = i.gateway || '?';
                     net.ssid = i.ssid || ('? ' + (i.ssidError || '')); net.transport = i.transport; net.dns = (i.dns || []).join(', ');
+                    net.bssid = i.bssid || '?';
                 } catch (e) { net.errors.push(e.message); }
+                if (typeof br.network.getWifi === 'function') {
+                    try {
+                        if (typeof br.network.requestLocation === 'function') await br.network.requestLocation(false);
+                        const w = await br.network.getWifi();
+                        net.bssid = w.bssid || ('? ' + (w.error || ''));
+                        net.wifi = `RSSI ${w.rssi ?? '?'} dBm, ${w.frequency ?? '?'} MHz`;
+                        if (w.ssid) net.ssid = w.ssid;
+                    } catch (e) { net.errors.push('WLAN: ' + e.message); }
+                }
             }
             if (net.source !== 'nativ') {
                 const ips = await getIpViaWebRTC();
@@ -1236,7 +1281,7 @@ await __m.actions(ctx);
                 }
                 if (net.gateway === '?') net.gateway = '? (geraten: ' + cands.join(', ') + ' – keine Antwort)';
             }
-            el.textContent = `WLAN-Name: ${net.ssid}\nEigene IP: ${net.ownIp}\nGateway: ${net.gateway}` +
+            el.textContent = `WLAN-Name: ${net.ssid}\nAccess Point (BSSID): ${net.bssid || 'nicht verfügbar (braucht nächsten Build)'}` + (net.wifi ? `\nSignal: ${net.wifi}` : '') + `\nEigene IP: ${net.ownIp}\nGateway: ${net.gateway}` +
                 (net.dns ? `\nDNS: ${net.dns}` : '') + `\nQuelle: ${net.source}` + (net.errors.length ? `\nFEHLER: ${net.errors.join(' | ')}` : '');
         }
 
@@ -1359,7 +1404,7 @@ await __m.actions(ctx);
 
         function netInfoText() {
             const L = ['Netzwerk-Info (EveryMacro, ' + new Date().toLocaleString('de-DE') + ')', '',
-                `WLAN-Name: ${net.ssid}`, `Eigene IP: ${net.ownIp}`, `Gateway: ${net.gateway}`, `Quelle: ${net.source}`];
+                `WLAN-Name: ${net.ssid}`, `Access Point (BSSID): ${net.bssid || 'nicht verfügbar (braucht nächsten Build)'}`, ...(net.wifi ? [`Signal: ${net.wifi}`] : []), `Eigene IP: ${net.ownIp}`, `Gateway: ${net.gateway}`, `Quelle: ${net.source}`];
             if (net.errors.length) L.push('FEHLER: ' + net.errors.join(' | '));
             if (net.scan.length) { L.push('', 'Geräte im Netz (HTTP):'); net.scan.forEach(r => L.push(`  ${r.ip}  HTTP ${r.status}${r.server ? '  Server: ' + r.server : ''}${r.title ? '  „' + r.title + '“' : ''}`)); }
             if (net.device) { L.push('', deviceText(net.device)); }
@@ -1420,6 +1465,14 @@ await __m.actions(ctx);
         function manual() {
             return { type: 'manual' };
         }
+
+        // Kachel-Menü / Widget-Knopf / WLAN-Access-Point-Wechsel (EveryApp-Hintergrund, nächster Build)
+        function tileMenu(id = null) { return { type: 'tileMenu', id }; }
+        function widgetAction(id = null) { return { type: 'widgetAction', id }; }
+        function wifiChanged(bssid = null) { return { type: 'wifiChanged', bssid }; }
+        // UI-Deklarationen für macro({ ui: [tile({...}), widget({...})] })
+        function tile(o) { return { kind: 'tile', ...o }; }
+        function widget(o) { return { kind: 'widget', ...o }; }
 
         // ============================================================================
         // LOGGING

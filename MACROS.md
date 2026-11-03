@@ -608,3 +608,72 @@ macro({ name: "Denon an (Kachel)", triggers: [quickTile("Denon an")], actions: a
 ```
 Läuft über den EveryApp-Hintergrund (Hintergrundmodus muss an sein). EveryApp hat 5 Kacheln („EveryApp 1“ bis „EveryApp 5“); jeder Name bekommt automatisch eine Kachel,
 die dann diesen Namen trägt. Einmalig in den Schnelleinstellungen über „Bearbeiten“ hinzufügen. Maximal 5 verschiedene Namen.
+
+## Kacheln, Kachel-Menü, Homescreen-Widgets, WLAN-Access-Point (braucht nächsten Build)
+
+Alles hier ist nativ vorbereitet und **braucht den nächsten Build**. Auf der aktuellen APK wird die Konfiguration nur gespeichert. Im Log steht dann „Kacheln/Widgets brauchen nächsten Build“ bzw. „WLAN-Info braucht nächsten Build“. Es stürzt nichts ab.
+
+### Deklaration im Makro
+```js
+macro({
+  name: 'Denon',
+  ui: [
+    tile({ slot: 1, icon: 'power', label: 'Denon', state: 'off',
+      menu: [
+        { type: 'button', id: 'tv',    icon: 'tv',    label: 'TV' },
+        { type: 'button', id: 'musik', icon: 'music', label: 'Musik' },
+        { type: 'button', id: 'power', icon: 'power', label: 'An/Aus' },
+        { type: 'slider', id: 'vol', label: 'Lautstärke', min: 0, max: 70, step: 1, value: 35 },
+      ] }),
+    widget({ id: 'denon', size: 'large', title: 'Denon', columns: 4, items: [
+      { type: 'button', id: 'power', icon: 'power', label: 'An/Aus' },
+      { type: 'button', id: 'tv', icon: 'tv', label: 'TV' },
+      { type: 'button', id: 'musik', icon: 'music', label: 'Musik' },
+      { type: 'slider', id: 'vol', label: 'Vol', min: 0, max: 70, step: 1, value: 35 },
+    ] }),
+  ],
+  triggers: [tileMenu(), widgetAction()],
+  actions: [async (ctx) => {
+    const ip = 'http://192.168.178.50';            // Denon-IP anpassen
+    const cmd = (c) => ctx.http.get(`${ip}/goform/formiPhoneAppDirect.xml?${encodeURIComponent(c)}`);
+    const { id, value } = ctx.trigger;             // id des Knopfs/Sliders, value bei Slidern
+    if (id === 'power') {
+      const on = ctx.globals.denonOn !== true;
+      await cmd(on ? 'PWON' : 'PWSTANDBY'); ctx.globals.denonOn = on;
+      await ctx.tile.setState(1, on ? 'on' : 'off');
+    }
+    if (id === 'tv')    await cmd('SITV');
+    if (id === 'musik') await cmd('SIMPLAY');
+    if (id === 'vol')   await cmd('MV' + String(Math.round(value)).padStart(2, '0'));
+  }],
+});
+```
+
+- **`tile({slot?, icon, label, state, subtitle?, menu?})`**: Schnelleinstellungs-Kachel „EveryApp 1–5“. Ohne `slot` wird der nächste freie Slot genommen; explizite Slots haben Vorrang vor `quickTile`-Slots. Eine Kachel **ohne** `menu` löst beim Tippen `quickTile(label)` aus. Eine Kachel **mit** `menu` öffnet einen kleinen nativen Dialog. Knöpfe schließen den Dialog (außer bei `keepOpen: true`). Slider feuern beim Loslassen und merken sich ihren Wert.
+- **`widget({id, size:'small'|'large', title?, columns?, items})`**: Es gibt zwei Widget-Typen: „EveryApp klein“ (2×1) und „EveryApp groß“ (4×2). Beide sind in der Größe veränderbar. Hast du mehrere Widget-Configs, fragt Android beim Platzieren, welche angezeigt wird. Knöpfe lösen `widgetAction` aus. Ein Slider-Feld öffnet beim Tippen den Dialog mit einem echten Slider.
+- **Icons**: Eingebaut sind `power tv music volume_up volume_down volume_mute speaker lightbulb home play pause stop next previous bluetooth wifi star heart add remove check close headset movie game bolt lock car circle input menu`. Du kannst auch `data:image/png;base64,…` oder eine `https://…`-URL angeben (wird einmal geladen). Unbekannte Namen werden als erster Buchstabe angezeigt.
+- **Trigger**: `tileMenu(id?)` und `widgetAction(id?)`. Ohne id reagiert der Trigger auf alle Einträge. Im Makro stehen dann `ctx.trigger.id`, `ctx.trigger.value` (bei Slidern), `ctx.trigger.slot` (Kachel) und `ctx.trigger.widgetId` zur Verfügung.
+- **Laufzeit-API**:
+  - `ctx.tile.setState(slot|label, 'on'|'off')`, `ctx.tile.setLabel(…)`, `ctx.tile.setIcon(…)`, `ctx.tile.update(slot, patch)`
+  - `ctx.widget.update(id, { title, items: { vol: { value: 40 }, power: { state: 'on' } } })`
+- Kacheln musst du selbst hinzufügen: Schnelleinstellungen → Stift → „EveryApp N“. Widgets fügst du selbst über Homescreen → Widgets → EveryApp hinzu.
+
+### WLAN / Access Point (Fritzbox vs. Repeater)
+- `await ctx.wifi.info()` liefert `{ ssid, bssid, rssi, frequency, linkSpeed, ip, error? }`. Auf der aktuellen APK kommt `{ssid:null, bssid:null, error}`.
+- Trigger `wifiChanged(bssid?)` feuert, wenn der Access Point (BSSID) oder die SSID wechselt. Das funktioniert auch im Hintergrund über den EveryApp-Vordergrunddienst. Die Werte stehen dann in `ctx.trigger.bssid`, `ssid`, `rssi`, `frequency`, `prevBssid` und `prevSsid`. Der erste Wert nach dem Start des Dienstes wird nur gemerkt und löst nichts aus. `wifiChanged('aa:bb:…')` filtert auf eine BSSID oder einen SSID-Namen.
+- **Berechtigungen**: Android verrät SSID und BSSID nur mit *genauem Standort*. Im Hintergrund brauchst du zusätzlich *Standort „Immer zulassen“*, und der Standort muss am Handy eingeschaltet sein. `EveryAppBridge.network.requestLocation(true)` fragt in zwei Schritten: Zuerst erklärt es, wofür der Standort gebraucht wird, und fragt den genauen Standort ab. Danach führt es zur Einstellungsseite für „Immer zulassen“, denn ab Android 11 geht das nur über die Einstellungen.
+- Die BSSID siehst du unter EveryMacro → Netzwerk-Info → „Für KI kopieren“.
+
+```js
+// BSSIDs aus "Netzwerk-Info" eintragen
+macro({
+  name: 'Fritz AP',
+  triggers: [wifiChanged()],
+  actions: [async (ctx) => {
+    const APS = { 'aa:bb:cc:dd:ee:01': 'Fritzbox', 'aa:bb:cc:dd:ee:02': 'Repeater (192.168.178.133)' };
+    const t = ctx.trigger;
+    if (!t.bssid) return ctx.notify('WLAN', 'WLAN getrennt');
+    await ctx.notify('WLAN-Wechsel', `${APS[t.bssid] || t.bssid} (${t.ssid}, ${t.rssi} dBm)`);
+  }],
+});
+```
