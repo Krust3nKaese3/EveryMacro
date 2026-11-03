@@ -732,6 +732,49 @@ macro({
 - `ctx.ble.notify(addr, svc, chr, true)` merkt sich das Abo dauerhaft. Bricht die Verbindung ab oder startet EveryApp neu, verbindet EveryApp automatisch wieder und abonniert neu, mit wachsender Wartezeit bis maximal 5 Minuten. Ein Neu-Abonnieren per `appStart`/`interval` ist nicht mehr nötig.
 - `ctx.ble.notify(…, false)` entfernt das Abo. `ctx.ble.disconnect(addr)` pausiert die automatische Wiederverbindung bis zum nächsten `connect`/`notify`.
 
+## Tuya / Smart Life lokal (LAN, ohne Internet) – braucht nächsten Build
+
+Steuert Tuya-Geräte (z.B. Deckenlampe) direkt im WLAN über Port 6668, Protokoll 3.3 / 3.4 / 3.5.
+Benötigt die Permission **`net`** (steht in `everyapp.json`; EveryApp fragt beim nächsten Start nach).
+Auf der alten APK werfen alle Aufrufe `… braucht nächsten Build` (kein Absturz).
+
+**localKey besorgen:** einmalig mit [tinytuya](https://github.com/jasonacox/tinytuya) `python -m tinytuya wizard`
+(Tuya-IoT-Developer-Account, Smart-Life-App verknüpfen) → liefert `id`, `key` (=localKey, 16 Zeichen) und `version`.
+Achtung: Wird das Gerät in der App neu gekoppelt, ändert sich der localKey.
+
+**Typische DPs Lampe:** `"20"` an/aus (bool), `"21"` Modus (`"white"`/`"colour"`), `"22"` Helligkeit (10–1000), `"23"` Farbtemperatur (0–1000).
+
+```js
+macro("Deckenlampe an", {
+  secrets: [{ key: "tuyaKey", label: "Tuya localKey (16 Zeichen)" }],
+  run: async (ctx) => {
+    const lamp = ctx.tuyaLocal({
+      id: "bf1234567890abcdef",      // Geräte-ID
+      localKey: ctx.secrets.tuyaKey,
+      version: "3.4",                 // 3.3 | 3.4 | 3.5
+      // ip: "192.168.178.40",        // optional – sonst UDP-Discovery (6666/6667/7000, ~6 s)
+    });
+    try {
+      await lamp.set({ "20": true, "22": 800 });   // lokal zuerst
+      ctx.log("Status: " + JSON.stringify(await lamp.status()));
+    } catch (e) {
+      ctx.log("Lokal fehlgeschlagen: " + e.message + " → Cloud-Fallback", "warn");
+      // Cloud-Fallback (Platzhalter): Tuya-IoT-Cloud-API mit Access-ID/Secret aus ctx.secrets,
+      // signiert per ctx.crypto.hmacSha256, Aufruf per ctx.http – noch nicht fertig implementiert.
+      throw e;
+    }
+  }
+});
+```
+
+**Geräte im WLAN finden:** `const list = await ctx.net.tuyaDiscover(6000)` → `[{ip, gwId, version, …}]`.
+Tipp: feste IP im Router vergeben und `ip` setzen – schneller und zuverlässiger als Discovery.
+
+**Low-Level** (alles Hex-Strings):
+- `const s = await ctx.net.tcp(host, port, {timeoutMs})` → `s.send(hex)`, `await s.receive({minBytes, timeoutMs})` (`''` bei Timeout), `s.close()`
+- `ctx.net.udpSend(host, port, hex, {broadcast: true})`, `await ctx.net.udpListen([6666, 6667], 5000)` → `[{from, port, hex}]`
+- `ctx.crypto.aesEcb(encrypt, keyHex, dataHex)` (ohne Padding), `aesGcm(encrypt, key, iv, aad, data)` (Tag hinten angehängt), `hmacSha256(key, data)`, `md5(data)`, `crc32(data)` → Zahl, `randomHex(n)`
+
 ## 🔑 Secrets (API-Keys, Passwörter)
 
 Secrets stehen **nie im Makro-Code**. Das Makro deklariert nur, welche es braucht:
