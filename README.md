@@ -4,14 +4,17 @@
 
 ## Features
 
-- ✅ **Bluetooth-Trigger**: Automatisch bei Gerät-Verbindung/-Trennung
-- ✅ **HTTP-Requests**: GET/POST zu Smart Home APIs, lokalen Geräten
+- ✅ **Bluetooth-Trigger**: Automatisch bei Gerät-Verbindung/-Trennung (Classic Bluetooth)
+- ✅ **HTTP-Requests**: GET/POST/PUT/DELETE mit Custom Headers zu Smart Home APIs, lokalen Geräten
 - ✅ **Benachrichtigungen & Vibration**: Feedback bei Makro-Ausführung
 - ✅ **Persistente Variablen**: Zustand zwischen Ausführungen speichern
-- ✅ **Interval-Trigger**: Periodische Makros
-- ✅ **Hintergrundmodus**: App-Start-Trigger und dauerhaftes Monitoring
+- ✅ **Interval-Trigger**: Periodische Makros (auch im Hintergrund)
+- ✅ **Hintergrundmodus**: Foreground Service mit persistenter Notification
+- ✅ **App-Start-Trigger**: Makros bei App-Start ausführen
 - ✅ **Manueller Test**: Makros jederzeit testen
 - ✅ **Einfache DSL**: JavaScript-basiert, AI-freundlich
+
+> **Alle Features verfügbar ab EveryApp v2.0** ([PR #3](https://github.com/Krust3nKaese3/EveryApp/pull/3))
 
 ## Installation in EveryApp
 
@@ -155,25 +158,23 @@ Siehe **[MACROS.md](MACROS.md)** für:
 
 ## Anforderungen
 
-### EveryApp Container API
+### EveryApp v2.0 oder neuer
 
-EveryMacro benötigt folgende Bridge-Funktionen (werden parallel zu EveryApp hinzugefügt):
+**Erforderlich:** EveryApp mit [PR #3](https://github.com/Krust3nKaese3/EveryApp/pull/3) (Advanced Capabilities)
 
-**Neue APIs:**
-- `EveryAppBridge.events.on('bluetooth.connected', callback)` - Bluetooth-Event
-- `EveryAppBridge.events.on('bluetooth.disconnected', callback)` - Bluetooth-Event
-- `EveryAppBridge.events.on('app.start', callback)` - App-Start-Event
-- `EveryAppBridge.bluetooth.getConnectedDevices()` - Verbundene Geräte abfragen
-- `EveryAppBridge.http.request({ url, method, headers, body, timeoutMs })` - Erweiterte HTTP-API
-- `EveryAppBridge.background.enable()` - Hintergrundmodus aktivieren
-- `EveryAppBridge.background.isEnabled()` - Status abfragen
+**Alle benötigten Bridge-APIs sind implementiert:**
+- ✅ `EveryAppBridge.events.on('bluetooth.connected', callback)` - Classic Bluetooth Events
+- ✅ `EveryAppBridge.events.on('bluetooth.disconnected', callback)` - Classic Bluetooth Events
+- ✅ `EveryAppBridge.events.on('app.start', callback)` - App-Start-Event
+- ✅ `EveryAppBridge.bluetooth.getConnectedDevices()` - Aktuell verbundene Geräte
+- ✅ `EveryAppBridge.http.request({ url, method, headers, body, timeoutMs })` - Vollständige HTTP-API
+- ✅ `EveryAppBridge.background.enable/disable/isEnabled()` - Hintergrundmodus-Steuerung
+- ✅ `EveryAppBridge.storage.*` - Key-Value Storage
+- ✅ `EveryAppBridge.notifications.*` - Benachrichtigungen
+- ✅ `EveryAppBridge.vibration.*` - Vibration
 
-**Bestehende APIs:**
-- `EveryAppBridge.storage.*` - Key-Value Storage
-- `EveryAppBridge.notifications.*` - Benachrichtigungen
-- `EveryAppBridge.vibration.*` - Vibration
-
-EveryMacro erkennt automatisch fehlende Features und zeigt entsprechende Warnungen an.
+**Feature Detection:**
+EveryMacro erkennt automatisch fehlende Features und zeigt Warnungen an, falls eine ältere EveryApp-Version verwendet wird.
 
 ## Manifest
 
@@ -196,10 +197,12 @@ EveryMacro erkennt automatisch fehlende Features und zeigt entsprechende Warnung
 
 ## Einschränkungen
 
-1. **Bluetooth-Events** erfordern die erweiterte EveryApp-Version
-2. **Hintergrundmodus** funktioniert nur auf Android (EveryApp-Einschränkung)
-3. **HTTP-Requests** können durch CORS bei externen APIs blockiert werden
+1. **Bluetooth:** Nur Classic Bluetooth (nicht BLE) - für Auto, Kopfhörer, Smart Home Geräte
+2. **Plattform:** Android-only (EveryApp-Einschränkung, iOS folgt später)
+3. **HTTP CORS:** Externe APIs können durch CORS blockiert werden (lokale Geräte funktionieren)
 4. **Keine UI-Builder** - Makros werden als Code eingefügt (designt für AI-Generierung)
+
+Siehe [LIMITATIONS.md](LIMITATIONS.md) für Details.
 
 ## AI-Assistenten
 
