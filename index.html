@@ -1083,6 +1083,11 @@ await __m.actions(ctx);
                 if (!b || typeof b[f] !== 'function') throw new Error('BLE braucht nächsten Build'); return b[f](...a); };
             ctx.ble = { scan: __ble('scan'), connect: __ble('connect'), disconnect: __ble('disconnect'),
                 write: __ble('write'), read: __ble('read'), notify: __ble('notify') };
+            const __nb = (cat, f) => (...a) => { const b = window.EveryAppBridge && window.EveryAppBridge[cat];
+                if (!b || typeof b[f] !== 'function') throw new Error('Raw-Netzwerk/Krypto (' + cat + '.' + f + ') braucht nächsten Build'); return b[f](...a); };
+            ctx.net = { tcp: __nb('net', 'tcp'), udpSend: __nb('net', 'udpSend'), udpListen: __nb('net', 'udpListen'), tuyaDiscover: __nb('net', 'tuyaDiscover') };
+            ctx.crypto = {}; ['aesEcb', 'aesGcm', 'hmacSha256', 'md5', 'crc32', 'randomHex'].forEach(f => { ctx.crypto[f] = __nb('crypto', f); });
+            ctx.tuyaLocal = (cfg) => ({ status: () => __nb('net', 'tuyaStatus')(cfg), set: (dps) => __nb('net', 'tuyaSet')(cfg, dps) });
             ctx.wifi = { info: async () => {
                 const n = window.EveryAppBridge && window.EveryAppBridge.network;
                 if (!n || typeof n.getWifi !== 'function') return { ssid: null, bssid: null, error: 'WLAN-Info braucht nächsten Build' };
