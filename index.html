@@ -381,6 +381,15 @@
                     <button class="small-btn" id="importUrlBtn">Import</button>
                 </div>
                 <button class="small-btn" id="importClipBtn" style="margin-top:6px">📋 Aus Zwischenablage importieren</button>
+                <div style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.2)">
+                    <div style="font-size:13px;font-weight:bold;margin-bottom:6px">📁 GitHub-Ordner importieren (alle .js-Makros)</div>
+                    <div style="display:flex;gap:6px">
+                        <input id="folderUrlInput" type="url" placeholder="https://github.com/user/repo/tree/branch/path" style="flex:1;min-width:0;padding:8px;border-radius:6px;border:1px solid #555;background:#1e1e1e;color:#eee">
+                        <button class="small-btn" id="importFolderBtn">Importieren</button>
+                    </div>
+                    <div id="folderImportProgress" style="display:none;margin-top:6px;font-size:12px;opacity:0.85"></div>
+                    <div id="folderImportResult" style="display:none;margin-top:6px;font-size:12px;background:rgba(0,0,0,0.3);padding:8px;border-radius:6px;max-height:200px;overflow-y:auto"></div>
+                </div>
                 <div id="importError" style="display:none;margin-top:6px;background:#3a1515;border:1px solid #c62828;border-radius:6px;padding:8px">
                     <pre id="importErrorText" style="white-space:pre-wrap;word-break:break-all;margin:0;font-size:12px;user-select:text;-webkit-user-select:text"></pre>
                     <button class="small-btn" id="importErrorCopy" style="margin-top:6px">📋 Fehler kopieren</button>
@@ -789,7 +798,14 @@
         function handleDeepLink(link) {
             if (!link || String(link.path || '').replace(/\/+$/, '') !== 'import') return;
             const p = link.params || {};
-            if (p.gist) importFrom(p.gist); else if (p.url) importFrom(p.url); else showImportError('Deep-Link ohne url= oder gist=: ' + link.url);
+            if (p.gist) importFrom(p.gist); else if (p.url) {
+                // Check if URL is a GitHub folder - if so, use folder import
+                if (isGitHubFolderUrl(p.url)) {
+                    importFromGitHubFolder(p.url);
+                } else {
+                    importFrom(p.url);
+                }
+            } else showImportError('Deep-Link ohne url= oder gist=: ' + link.url);
         }
 
         function initImport() {
@@ -799,8 +815,267 @@
                 const err = await copyText(document.getElementById('importErrorText').textContent);
                 showToast(err ? 'Kopieren fehlgeschlagen – Text lange antippen' : 'Kopiert', !!err);
             });
+            document.getElementById('importFolderBtn').addEventListener('click', () => importFromGitHubFolder(document.getElementById('folderUrlInput').value));
             window.addEventListener('everyapp:deeplink', (e) => handleDeepLink(e.detail));
             if (window.EveryAppLaunch) { const l = window.EveryAppLaunch; window.EveryAppLaunch = null; setTimeout(() => handleDeepLink(l), 500); }
+            
+            // Prefill GitHub folder input if in dev environment
+            initDevEnvironmentDetection();
+        }
+
+        // ============================================================================
+        // GitHub Folder Import
+        // ============================================================================
+
+        function isGitHubFolderUrl(url) {
+            try {
+                const u = new URL(url);
+                return u.hostname === 'github.com' && u.pathname.includes('/tree/');
+            } catch (e) {
+                return false;
+            }
+        }
+
+        function parseGitHubFolderUrl(url) {
+            // Supports: https://github.com/<owner>/<repo>/tree/<branch>/<path>
+            // Also supports raw.githubusercontent.com URLs (convert to API format)
+            try {
+                const u = new URL(url);
+                
+                // Handle raw.githubusercontent.com URLs
+                if (u.hostname === 'raw.githubusercontent.com') {
+                    // https://raw.githubusercontent.com/<owner>/<repo>/<branch>/<path>
+                    const parts = u.pathname.split('/').filter(p => p);
+                    if (parts.length < 3) throw new Error('Ungültige raw.githubusercontent.com URL');
+                    return {
+                        owner: parts[0],
+                        repo: parts[1],
+                        branch: parts[2],
+                        path: parts.slice(3).join('/') || ''
+                    };
+                }
+                
+                // Handle github.com URLs
+                if (u.hostname !== 'github.com') {
+                    throw new Error('URL muss github.com sein');
+                }
+                
+                // https://github.com/<owner>/<repo>/tree/<branch>/<path>
+                const parts = u.pathname.split('/').filter(p => p);
+                if (parts.length < 4 || parts[2] !== 'tree') {
+                    throw new Error('URL muss das Format github.com/<owner>/<repo>/tree/<branch>/<path> haben');
+                }
+                
+                return {
+                    owner: parts[0],
+                    repo: parts[1],
+                    branch: parts[3],
+                    path: parts.slice(4).join('/') || ''
+                };
+            } catch (e) {
+                throw new Error('Fehler beim Parsen der GitHub-URL: ' + e.message);
+            }
+        }
+
+        async function importFromGitHubFolder(url) {
+            showImportError('');
+            const progressEl = document.getElementById('folderImportProgress');
+            const resultEl = document.getElementById('folderImportResult');
+            progressEl.style.display = 'none';
+            resultEl.style.display = 'none';
+            
+            try {
+                const urlStr = String(url || '').trim();
+                if (!urlStr) throw new Error('Keine URL angegeben');
+                
+                progressEl.textContent = 'Analysiere URL...';
+                progressEl.style.display = 'block';
+                
+                const parsed = parseGitHubFolderUrl(urlStr);
+                const apiUrl = `https://api.github.com/repos/${parsed.owner}/${parsed.repo}/contents/${parsed.path}?ref=${parsed.branch}`;
+                
+                progressEl.textContent = `Lade Dateien von ${parsed.owner}/${parsed.repo}/${parsed.path}...`;
+                
+                const listJson = await importHttpGet(apiUrl);
+                const files = JSON.parse(listJson);
+                
+                if (!Array.isArray(files)) {
+                    throw new Error('Antwort von GitHub API ist kein Array - möglicherweise ist der Pfad eine Datei statt eines Ordners');
+                }
+                
+                // Filter for .js files
+                const jsFiles = files.filter(f => f.type === 'file' && f.name.endsWith('.js'));
+                
+                if (jsFiles.length === 0) {
+                    throw new Error('Keine .js-Dateien im angegebenen Ordner gefunden');
+                }
+                
+                progressEl.textContent = `Gefunden: ${jsFiles.length} Makro-Datei(en). Importiere...`;
+                
+                const results = [];
+                
+                for (const file of jsFiles) {
+                    const result = { file: file.name, status: 'pending' };
+                    results.push(result);
+                    
+                    try {
+                        // Download raw content
+                        const rawUrl = file.download_url;
+                        const code = await importHttpGet(rawUrl);
+                        
+                        // Validate and import
+                        const validation = validateMacroCode(code);
+                        if (!validation.valid) {
+                            result.status = 'error';
+                            result.error = validation.error;
+                            continue;
+                        }
+                        
+                        const data = splitSrcId(validation.macro);
+                        const idx = macros.findIndex(m => data.srcId ? m.srcId === data.srcId : (!m.srcId && m.name === data.name));
+                        
+                        let id;
+                        if (idx >= 0) {
+                            // Update existing
+                            id = macros[idx].id;
+                            stopMacro(id);
+                            const keep = { id, enabled: macros[idx].enabled, lastRun: macros[idx].lastRun, lastError: null, runCount: macros[idx].runCount };
+                            macros[idx] = { ...data, code, ...keep };
+                            result.status = 'updated';
+                        } else {
+                            // Create new
+                            id = 'macro_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+                            macros.push({ id, ...data, code, enabled: true, lastRun: null, lastError: null, runCount: 0 });
+                            result.status = 'imported';
+                        }
+                        
+                        result.macroName = data.name;
+                        
+                    } catch (e) {
+                        result.status = 'error';
+                        result.error = e.message || String(e);
+                    }
+                }
+                
+                await saveMacros();
+                renderMacros();
+                startActiveMacros();
+                
+                // Display results
+                progressEl.style.display = 'none';
+                
+                const imported = results.filter(r => r.status === 'imported').length;
+                const updated = results.filter(r => r.status === 'updated').length;
+                const failed = results.filter(r => r.status === 'error').length;
+                
+                let summary = `✅ Erfolgreich: ${imported} importiert, ${updated} aktualisiert`;
+                if (failed > 0) summary += ` | ❌ ${failed} fehlgeschlagen`;
+                
+                let detailHtml = `<div style="font-weight:bold;margin-bottom:8px">${summary}</div>`;
+                
+                results.forEach(r => {
+                    let icon = '✅';
+                    let statusText = '';
+                    if (r.status === 'imported') {
+                        icon = '✅';
+                        statusText = `importiert als "${r.macroName}"`;
+                    } else if (r.status === 'updated') {
+                        icon = '🔄';
+                        statusText = `aktualisiert: "${r.macroName}"`;
+                    } else if (r.status === 'error') {
+                        icon = '❌';
+                        statusText = `FEHLER: ${r.error}`;
+                    }
+                    
+                    detailHtml += `<div style="margin:4px 0;padding:4px;background:rgba(0,0,0,0.2);border-radius:4px">
+                        ${icon} <strong>${r.file}</strong>: ${statusText}
+                    </div>`;
+                });
+                
+                // Add copy button for errors
+                if (failed > 0) {
+                    const errorMessages = results
+                        .filter(r => r.status === 'error')
+                        .map(r => `${r.file}: ${r.error}`)
+                        .join('\n');
+                    
+                    detailHtml += `<button class="small-btn" style="margin-top:8px" onclick="copyFolderErrors('${errorMessages.replace(/'/g, "\\'")}')">📋 Fehler kopieren</button>`;
+                }
+                
+                resultEl.innerHTML = detailHtml;
+                resultEl.style.display = 'block';
+                
+                addLog(`GitHub-Ordner importiert: ${imported} neu, ${updated} aktualisiert, ${failed} fehlgeschlagen`, imported + updated > 0 ? 'info' : 'error');
+                showToast(`Import abgeschlossen: ${imported + updated} erfolgreich, ${failed} fehlgeschlagen`);
+                
+            } catch (e) {
+                progressEl.style.display = 'none';
+                showImportError('GitHub-Ordner-Import: ' + (e.message || String(e)));
+            }
+        }
+
+        // Helper function to copy folder import errors
+        window.copyFolderErrors = async function(errorText) {
+            const err = await copyText(errorText);
+            showToast(err ? 'Kopieren fehlgeschlagen' : 'Fehler kopiert ✓', !!err);
+        };
+
+        // ============================================================================
+        // Dev Environment Detection & Prefill
+        // ============================================================================
+
+        function initDevEnvironmentDetection() {
+            // Try multiple methods to detect dev environment
+            const isDev = detectDevEnvironment();
+            
+            if (isDev) {
+                const folderInput = document.getElementById('folderUrlInput');
+                folderInput.value = 'https://github.com/Krust3nKaese3/EveryMacro/tree/main/my-macros';
+                addLog('Dev-Umgebung erkannt - GitHub-Ordner-URL vorausgefüllt', 'info');
+            }
+        }
+
+        function detectDevEnvironment() {
+            // Method 1: Check for EveryAppBridge.buildInfo or similar
+            if (hasBridge && window.EveryAppBridge.buildInfo) {
+                try {
+                    const buildInfo = window.EveryAppBridge.buildInfo;
+                    if (buildInfo.isDev || buildInfo.environment === 'development' || buildInfo.devClient) {
+                        return true;
+                    }
+                } catch (e) {}
+            }
+            
+            // Method 2: Check for Expo dev client indicators
+            if (window.location.hostname === 'localhost' || 
+                window.location.hostname.startsWith('192.168.') ||
+                window.location.hostname.startsWith('10.')) {
+                return true;
+            }
+            
+            // Method 3: Check for __DEV__ flag (if exposed)
+            if (typeof window.__DEV__ !== 'undefined' && window.__DEV__ === true) {
+                return true;
+            }
+            
+            // Method 4: Check for development server indicators in URL
+            if (window.location.port && (window.location.port === '19006' || window.location.port === '8081')) {
+                return true;
+            }
+            
+            // Method 5: Check EveryAppBridge for any dev-related properties
+            if (hasBridge && window.EveryAppBridge) {
+                const bridge = window.EveryAppBridge;
+                // Check various possible dev flags
+                if (bridge.isDevelopment || bridge.isDevBuild || bridge.devMode || 
+                    (bridge.Constants && bridge.Constants.manifest && bridge.Constants.manifest.debuggerHost)) {
+                    return true;
+                }
+            }
+            
+            // Fallback: If none of the above methods work, we could prefill anyway and document this
+            // For now, return false if no clear dev indicator found
+            return false;
         }
 
         function showValidationError(message) {

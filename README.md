@@ -35,6 +35,20 @@
 3. **"Speichern"** klicken
 4. Makro aktivieren (Toggle-Button)
 
+### Makros importieren
+
+#### Einzelnes Makro
+- URL einer `.js`-Datei eingeben und auf **"Import"** klicken
+- Oder **"📋 Aus Zwischenablage importieren"** nutzen
+
+#### 📁 GitHub-Ordner (NEU)
+- **Alle** `.js`-Makros aus einem GitHub-Ordner auf einmal importieren
+- URL-Format: `https://github.com/<owner>/<repo>/tree/<branch>/<path>`
+- Beispiel: `https://github.com/Krust3nKaese3/EveryMacro/tree/main/my-macros`
+- In Dev-Builds wird diese URL automatisch vorausgefüllt
+- Zeigt Zusammenfassung: importiert / aktualisiert / fehlgeschlagen
+- Siehe [MACROS.md](MACROS.md) für Details
+
 ### Makro testen
 
 - **"▶ Testen"** Button neben dem Makro klicken
