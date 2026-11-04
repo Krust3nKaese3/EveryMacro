@@ -406,6 +406,7 @@
         <div class="section">
             <div class="section-title">
                 <span>Global Log</span>
+                <button class="small-btn" id="copyLogBtn2">Kopieren</button>
                 <button class="small-btn" id="clearLogBtn">Löschen</button>
             </div>
             <div class="log-view" id="logView">
@@ -528,6 +529,7 @@
             document.getElementById('closeSecretsBtn').addEventListener('click', closeSecretsModal);
             document.getElementById('backgroundToggle').addEventListener('click', toggleBackground);
             document.getElementById('clearLogBtn').addEventListener('click', clearLog);
+            document.getElementById('copyLogBtn2').addEventListener('click', function(){ var b=this; copyFullLog(); var a=document.getElementById('copyLogBtn'); setTimeout(function(){ b.textContent=(a&&a.textContent)||'Kopiert'; setTimeout(function(){ b.textContent='Kopieren'; },2000); },300); });
             document.getElementById('btRefreshBtn').addEventListener('click', loadBtDevices);
             document.getElementById('btIncludePaired').addEventListener('change', loadBtDevices);
             document.getElementById('btCopyBtn').addEventListener('click', copyBtInfo);
