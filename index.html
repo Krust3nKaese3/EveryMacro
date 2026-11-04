@@ -447,6 +447,7 @@
             <div class="modal-header">Vollständiger Log</div>
             <div class="log-view" style="max-height: 60vh;" id="fullLogView"></div>
             <div class="modal-actions">
+                <button class="modal-btn" id="copyLogBtn">Alles kopieren</button>
                 <button class="modal-btn" id="closeLogModalBtn">Schließen</button>
             </div>
         </div>
@@ -533,6 +534,7 @@
             document.getElementById('btCopyBtn').addEventListener('click', copyBtInfo);
             initNetSection();
             document.getElementById('showLogBtn').addEventListener('click', showFullLog);
+            document.getElementById('copyLogBtn').addEventListener('click', copyFullLog);
             document.getElementById('closeLogModalBtn').addEventListener('click', () => {
                 document.getElementById('logModal').classList.remove('active');
             });
@@ -2182,6 +2184,29 @@ await __m.actions(ctx);
         function clearLog() {
             globalLog = [];
             renderLog();
+        }
+
+        async function copyFullLog() {
+            const btn = document.getElementById('copyLogBtn');
+            const originalText = btn.textContent;
+            
+            const logText = globalLog.map(entry => 
+                `[${entry.timestamp}] [${entry.level.toUpperCase()}] ${entry.message}`
+            ).join('\n');
+            
+            const err = await copyText(logText);
+            
+            if (!err) {
+                btn.textContent = 'Kopiert ✓';
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                }, 2000);
+            } else {
+                btn.textContent = 'Fehler beim Kopieren';
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                }, 2000);
+            }
         }
 
         // Make functions available globally for onclick handlers
