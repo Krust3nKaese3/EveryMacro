@@ -142,6 +142,7 @@ macro({
       if (token) headers.access_token = token;
       const res = await ctx.http.request({ url: HOST + path, method, headers, body: body || undefined });
       const json = JSON.parse(res.body);
+      if (path.indexOf("/token") < 0) ctx.log(`TUYA ${method} ${path} body=${body} -> ${res.body}`);
       if (!json.success) throw new Error(json.msg || "Tuya-Fehler");
       return json.result;
     };
@@ -155,6 +156,7 @@ macro({
       const zuWert = (p) => Math.round(10 + (Math.max(10, Math.min(100, p)) - 10) / 90 * 990);
       if (event === "open") {
         const st = await call("GET", `/v1.0/iot-03/devices/${DEV}/status`, "", token);
+        ctx.log("TUYA status: " + JSON.stringify(st));
         const w = (c) => (st.find(x => x.code === c) || {}).value;
         const mode = w("work_mode") === "colour" ? "colour" : "white";
         let roh = w("bright_value_v2"), hue = (await get("popupHue")) || 20;
