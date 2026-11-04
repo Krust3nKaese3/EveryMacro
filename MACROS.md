@@ -822,6 +822,38 @@ Vor dem Speichern: Dialog „Makro X wird aktualisiert“ bzw. „… wird neu a
 Beim Aktualisieren bleiben gespeicherte Secrets und `ctx.vars` erhalten (interne ID ändert sich nicht), ebenso aktiviert/deaktiviert und Ausführungszähler.
 Fehler (HTTP-Status, kein https, ungültiges Makro) erscheinen in einer roten Box mit **📋 Fehler kopieren**.
 
+### 📁 GitHub-Ordner: Alle Makros auf einmal importieren
+
+**Neu:** Du kannst jetzt **alle** `.js`-Makros aus einem GitHub-Repo-Ordner auf einmal importieren.
+
+**So geht's:**
+1. Im Abschnitt **Makros** findest du unter dem normalen Import-Feld den neuen Bereich **„📁 GitHub-Ordner importieren"**
+2. Gib die URL zu einem GitHub-Ordner ein, z.B.:
+   ```
+   https://github.com/Krust3nKaese3/EveryMacro/tree/main/my-macros
+   ```
+3. Klicke auf **„Importieren"**
+4. EveryMacro lädt alle `.js`-Dateien aus dem Ordner und importiert sie einzeln
+5. Du siehst eine Zusammenfassung: wie viele Makros importiert/aktualisiert/fehlgeschlagen wurden
+6. Bei Fehlern kannst du die Fehlermeldungen kopieren
+
+**Unterstützte URL-Formate:**
+- `https://github.com/<owner>/<repo>/tree/<branch>/<path>`
+- `https://raw.githubusercontent.com/<owner>/<repo>/<branch>/<path>` (wird automatisch konvertiert)
+
+**Deep-Link:** Der GitHub-Ordner-Import funktioniert auch per Deep-Link:
+```
+everyapp://everymacro/import?url=https://github.com/user/repo/tree/main/folder
+```
+
+**Dev-Umgebung:** Wenn EveryMacro in einem Entwicklungs-Build von EveryApp (z.B. `SrvEveryApp` mit Expo Dev-Server) läuft, wird das URL-Feld automatisch mit `https://github.com/Krust3nKaese3/EveryMacro/tree/main/my-macros` vorausgefüllt.
+
+**Update-Logik:**
+- Makros mit demselben `id` werden aktualisiert (Secrets und `ctx.vars` bleiben erhalten)
+- Makros ohne `id` werden am Namen erkannt
+- Neue Makros werden hinzugefügt
+- Bestehende Makros werden **nicht** nochmal gefragt (nur bei Einzelimport) – beim Massen-Import werden alle Makros automatisch übernommen
+
 ## 🪟 Popups (Overlay-Fenster) – braucht nächsten Build, Permission `popup`
 
 Ein Popup ist ein frei gestaltbares Overlay-Fenster mit eigenem HTML/JS. Öffnet sich per Quick-Tile, Widget-Knopf
