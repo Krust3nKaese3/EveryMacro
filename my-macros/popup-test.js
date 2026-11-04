@@ -30,7 +30,7 @@ macro({
   send("open", true);
 </script></body></html>`
   } })],
-  triggers: [popupEvent(), manual()],
+  triggers: [popupEvent("ptest"), manual()],
   actions: async (ctx) => {
     const t = ctx.trigger || {};
     const info = `Typ ${t.type} | popupId ${t.popupId} | Event ${t.event} | Wert ${JSON.stringify(t.value)}`;

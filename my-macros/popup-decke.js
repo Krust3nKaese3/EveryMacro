@@ -85,7 +85,7 @@ macro({
     })();
     </script></body></html>`
   } })],
-  triggers: [popupEvent(), manual()],
+  triggers: [popupEvent("decke"), manual()],
   actions: async (ctx) => {
     const ID = ctx.secrets.TUYA_CLIENT_ID;
     const SECRET = ctx.secrets.TUYA_SECRET;
