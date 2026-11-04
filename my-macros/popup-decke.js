@@ -20,6 +20,7 @@ macro({
       .sl .ic{position:absolute;left:16px;top:16px;color:#3B1810}
       .pc{position:absolute;right:20px;top:18px;font-size:14px;opacity:.85}
       .hue{position:relative;height:40px;border-radius:20px;touch-action:none;background:linear-gradient(90deg,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00)}
+      .ri{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;z-index:5;touch-action:none}
       .kn{position:absolute;top:4px;width:32px;height:32px;margin-left:-16px;border-radius:50%;border:3px solid #fff;box-sizing:border-box;box-shadow:0 1px 4px rgba(0,0,0,.5)}
       .row{display:flex;gap:10px;margin-top:14px}
       .b{flex:1;height:44px;border-radius:22px;background:#4A2E28;display:flex;align-items:center;justify-content:center;font-weight:500}
@@ -28,9 +29,9 @@ macro({
       .er{font-size:12px;color:#F4A08A;opacity:.85;text-align:center;margin-top:8px;min-height:0}.er:empty{display:none}
     </style></head><body><div class="w">
       <div class="top"><div class="pill" id="pw"><svg class="ic" viewBox="0 0 24 24" fill="currentColor"><path d="M9 21h6v-1H9v1zm3-19a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg><div><div class="pt">Decke</div><div class="ps" id="ps">…</div></div></div></div>
-      <div class="sl" id="sl"><div class="fill" id="fi"></div><svg class="ic" viewBox="0 0 24 24" fill="currentColor"><path d="M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zM11 1h2v3h-2zM11 20h2v3h-2zM1 11h3v2H1zM20 11h3v2h-3z"/></svg><div class="pc" id="pc"></div></div>
+      <div class="sl" id="sl"><div class="fill" id="fi"></div><svg class="ic" viewBox="0 0 24 24" fill="currentColor"><path d="M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zM11 1h2v3h-2zM11 20h2v3h-2zM1 11h3v2H1zM20 11h3v2h-3z"/></svg><div class="pc" id="pc"></div><input class="ri" id="sr" type="range" min="10" max="100" step="1"></div>
       <div class="lb">Farbe</div>
-      <div class="hue" id="hu"><div class="kn" id="kn"></div></div>
+      <div class="hue" id="hu"><div class="kn" id="kn"></div><input class="ri" id="hr" type="range" min="0" max="359" step="1"></div>
       <div class="row"><div class="b" id="bw">Weiß</div><div class="b" id="bc">Farbe</div></div>
       <div class="er" id="st"></div>
     </div><script>
@@ -58,6 +59,7 @@ macro({
         $("fi").style.width = s.bright + "%";
         $("fi").style.opacity = s.on ? 1 : .45;
         $("pc").textContent = s.bright + " %";
+        $("sr").value = s.bright; $("hr").value = s.hue;
         $("kn").style.left = (s.hue / 360 * 100) + "%";
         $("kn").style.background = "hsl(" + s.hue + ",100%,50%)";
         $("bw").classList.toggle("sel", s.mode !== "colour");
@@ -71,8 +73,10 @@ macro({
       }
       function frac(el, e){ var r = el.getBoundingClientRect(); return Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)); }
       $("pw").onclick = function(){ s.on = !s.on; draw(); send("on", s.on, true); };
-      drag($("sl"), function(e){ s.bright = Math.max(10, Math.round(frac($("sl"), e) * 100)); s.on = true; draw(); send("bright", s.bright); }, function(){ send("bright", s.bright, true); });
-      drag($("hu"), function(e){ s.hue = Math.round(frac($("hu"), e) * 360) % 360; s.mode = "colour"; s.on = true; draw(); send("hue", s.hue); }, function(){ send("hue", s.hue, true); });
+      $("sr").oninput = function(){ s.bright = Number(this.value); s.on = true; draw(); send("bright", s.bright); };
+      $("sr").onchange = function(){ s.bright = Number(this.value); send("bright", s.bright, true); };
+      $("hr").oninput = function(){ s.hue = Number(this.value); s.mode = "colour"; s.on = true; draw(); send("hue", s.hue); };
+      $("hr").onchange = function(){ s.hue = Number(this.value); send("hue", s.hue, true); };
       $("bw").onclick = function(){ s.mode = "white"; s.on = true; draw(); send("white", true, true); };
       $("bc").onclick = function(){ s.mode = "colour"; s.on = true; draw(); send("hue", s.hue, true); };
       var hooked = false;
