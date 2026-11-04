@@ -154,14 +154,16 @@ macro({
       const dev = `/v1.0/iot-03/devices/${DEV}/commands`;
       const cmd = (list) => call("POST", dev, JSON.stringify({ commands: list }), token);
       const zuWert = (p) => Math.round(10 + (Math.max(10, Math.min(100, p)) - 10) / 90 * 990);
+      const zuHell = (p) => Math.round(25 + (Math.max(10, Math.min(100, p)) - 10) / 90 * 230);
+      const BV = "bright_value", CD = "colour_data";
       if (event === "open") {
         const st = await call("GET", `/v1.0/iot-03/devices/${DEV}/status`, "", token);
         ctx.log("TUYA status: " + JSON.stringify(st));
         const w = (c) => (st.find(x => x.code === c) || {}).value;
         const mode = w("work_mode") === "colour" ? "colour" : "white";
-        let roh = w("bright_value_v2"), hue = (await get("popupHue")) || 20;
-        if (mode === "colour") { const cd = w("colour_data_v2"); const o = typeof cd === "string" ? JSON.parse(cd) : (cd || {}); roh = o.v; hue = o.h; }
-        const bright = typeof roh === "number" ? Math.max(10, Math.min(100, Math.round(10 + (roh - 10) / 990 * 90))) : 80;
+        let roh = w(BV), hue = (await get("popupHue")) || 20;
+        if (mode === "colour") { const cd = w(CD); const o = typeof cd === "string" ? JSON.parse(cd) : (cd || {}); roh = o.v; hue = o.h; }
+        const bright = typeof roh !== "number" ? 80 : mode === "colour" ? Math.max(10, Math.min(100, Math.round(10 + (roh - 10) / 990 * 90))) : Math.max(10, Math.min(100, Math.round(10 + (roh - 25) / 230 * 90)));
         await set("popupHue", hue); await set("popupBright", bright);
         await zumPopup({ on: !!w("switch_led"), mode, bright, hue });
         return;
@@ -172,14 +174,14 @@ macro({
         await set("popupBright", value);
         const st = await call("GET", `/v1.0/iot-03/devices/${DEV}/status`, "", token);
         const modus = (st.find(x => x.code === "work_mode") || {}).value;
-        if (modus === "colour") await cmd([{ code: "switch_led", value: true }, { code: "colour_data_v2", value: { h: (await get("popupHue")) || 0, s: 1000, v: zuWert(value) } }]);
-        else await cmd([{ code: "switch_led", value: true }, { code: "bright_value_v2", value: zuWert(value) }]);
+        if (modus === "colour") await cmd([{ code: "switch_led", value: true }, { code: CD, value: JSON.stringify({ h: (await get("popupHue")) || 0, s: 1000, v: zuWert(value) }) }]);
+        else await cmd([{ code: "switch_led", value: true }, { code: BV, value: zuHell(value) }]);
         return;
       }
       if (event === "hue") {
         await set("popupHue", value);
         const b = (await get("popupBright")) || 80;
-        await cmd([{ code: "switch_led", value: true }, { code: "work_mode", value: "colour" }, { code: "colour_data_v2", value: { h: value, s: 1000, v: zuWert(b) } }]);
+        await cmd([{ code: "switch_led", value: true }, { code: "work_mode", value: "colour" }, { code: CD, value: JSON.stringify({ h: value, s: 1000, v: zuWert(b) }) }]);
       }
     } catch (e) {
       ctx.log(`FEHLER: ${e.message}`);
